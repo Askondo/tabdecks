@@ -1,0 +1,90 @@
+<script lang="ts">
+  import Fader from './Fader.svelte';
+  import type { EngineBridge } from '@/lib/stores/engine-bridge.svelte';
+  import type { DeckId } from '@/messaging/protocol';
+
+  interface Props {
+    bridge: EngineBridge;
+    deck: DeckId;
+  }
+  let { bridge, deck }: Props = $props();
+
+  const state = $derived(bridge.decks[deck]);
+</script>
+
+<section class="deck" class:live={state.status === 'live'} data-deck={deck}>
+  <header>
+    <h2>Deck {deck}</h2>
+    <p class="status {state.status}" title={state.error ?? state.title}>
+      {#if state.status === 'empty'}
+        No tab assigned
+      {:else if state.status === 'live'}
+        ● {state.title}
+      {:else if state.status === 'disconnected'}
+        Disconnected — {state.title}
+      {:else}
+        Error: {state.error}
+      {/if}
+    </p>
+  </header>
+
+  <div class="controls">
+    <Fader
+      label="Trim"
+      value={bridge.trims[deck]}
+      min={0}
+      max={2}
+      vertical
+      onchange={(v) => bridge.setTrim(deck, v)}
+    />
+    <Fader
+      label="Vol"
+      value={bridge.faders[deck]}
+      vertical
+      onchange={(v) => bridge.setFader(deck, v)}
+    />
+  </div>
+</section>
+
+<style>
+  .deck {
+    border: 1px solid #2a2a36;
+    border-radius: 10px;
+    padding: 14px;
+    background: #16161e;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .deck.live[data-deck='A'] {
+    border-color: #2563eb;
+  }
+  .deck.live[data-deck='B'] {
+    border-color: #d97706;
+  }
+  h2 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    color: #c9cde0;
+  }
+  .status {
+    margin: 0;
+    font-size: 12px;
+    color: #9aa0b4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .status.live {
+    color: #4ade80;
+  }
+  .status.error {
+    color: #f87171;
+  }
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 28px;
+  }
+</style>
