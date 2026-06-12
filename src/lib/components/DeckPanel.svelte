@@ -2,6 +2,7 @@
   import EqSection from './EqSection.svelte';
   import Fader from './Fader.svelte';
   import FxSlot from './FxSlot.svelte';
+  import Meter from './Meter.svelte';
   import TransportControls from './TransportControls.svelte';
   import WaveformStrip from './WaveformStrip.svelte';
   import { FX_SLOTS } from '@/audio/deck';
@@ -15,6 +16,8 @@
   let { bridge, deck }: Props = $props();
 
   const state = $derived(bridge.decks[deck]);
+  // svelte-ignore state_referenced_locally -- deck/engine are fixed per panel instance
+  const analyser = bridge.engine.decks[deck].analyser;
 </script>
 
 <section class="deck" class:live={state.status === 'live'} data-deck={deck}>
@@ -60,6 +63,7 @@
       vertical
       onchange={(v) => bridge.setFader(deck, v)}
     />
+    <Meter {analyser} />
   </div>
 </section>
 

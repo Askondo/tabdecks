@@ -4,9 +4,12 @@
   import DeckPanel from '@/lib/components/DeckPanel.svelte';
   import Crossfader from '@/lib/components/Crossfader.svelte';
   import Fader from '@/lib/components/Fader.svelte';
+  import Meter from '@/lib/components/Meter.svelte';
   import StatusBar from '@/lib/components/StatusBar.svelte';
   import { onMessage } from '@/messaging/router';
-  import type { Message } from '@/messaging/protocol';
+  import { loadSettings, saveSettings, type SettingsV1 } from '@/settings/storage';
+  import type { EqBand } from '@/audio/eq';
+  import type { DeckId, Message } from '@/messaging/protocol';
 
   interface Props {
     engine: AudioEngine;
@@ -30,7 +33,72 @@
   function boundaryError(error: unknown) {
     console.error('[ui] panel crashed — audio unaffected', error);
   }
+
+  // ── Settings persistence ────────────────────────────────────────────────
+  let settingsLoaded = $state(false);
+  void loadSettings().then((s) => {
+    bridge.setMaster(s.master);
+    for (const deck of ['A', 'B'] as const) {
+      bridge.setTrim(deck, s.decks[deck].trim);
+      bridge.setBrakeTime(deck, s.decks[deck].brakeTime);
+      bridge.setStutterSlice(deck, s.decks[deck].sliceMs);
+    }
+    settingsLoaded = true;
+  });
+
+  $effect(() => {
+    const snapshot: SettingsV1 = {
+      v: 1,
+      master: bridge.master,
+      decks: {
+        A: deckSettings('A'),
+        B: deckSettings('B'),
+      },
+    };
+    if (settingsLoaded) saveSettings(snapshot);
+  });
+
+  function deckSettings(deck: DeckId) {
+    return {
+      trim: bridge.trims[deck],
+      brakeTime: bridge.transport[deck].brakeTime,
+      sliceMs: bridge.transport[deck].sliceMs,
+    };
+  }
+
+  // ── Keyboard shortcuts ──────────────────────────────────────────────────
+  const KILL_KEYS: Record<string, [DeckId, EqBand]> = {
+    q: ['A', 'low'],
+    w: ['A', 'mid'],
+    e: ['A', 'high'],
+    i: ['B', 'low'],
+    o: ['B', 'mid'],
+    p: ['B', 'high'],
+  };
+
+  function onKeydown(e: KeyboardEvent) {
+    if (e.target instanceof HTMLSelectElement || e.repeat) return;
+    const key = e.key.toLowerCase();
+    if (key === 'arrowleft' || key === 'arrowright') {
+      const delta = key === 'arrowleft' ? -0.05 : 0.05;
+      bridge.setCrossfade(Math.min(1, Math.max(0, bridge.crossfade + delta)));
+      e.preventDefault();
+    } else if (key === ' ') {
+      bridge.setCrossfade(0.5);
+      e.preventDefault();
+    } else if (KILL_KEYS[key]) {
+      const [deck, band] = KILL_KEYS[key];
+      bridge.setEqKill(deck, band, !bridge.eq[deck][band].killed);
+    }
+  }
+
+  function onBeforeUnload(e: BeforeUnloadEvent) {
+    const live = bridge.decks.A.status === 'live' || bridge.decks.B.status === 'live';
+    if (live) e.preventDefault();
+  }
 </script>
+
+<svelte:window onkeydown={onKeydown} onbeforeunload={onBeforeUnload} />
 
 <main>
   <header>
@@ -62,6 +130,7 @@
           max={1.5}
           onchange={(v) => bridge.setMaster(v)}
         />
+        <Meter analyser={engine.master.analyser} horizontal />
       </div>
     </div>
     {#snippet failed(_error, reset)}

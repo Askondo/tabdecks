@@ -76,6 +76,21 @@ Rules:
 - Crossfader is equal-power: `gainA = cos(x·π/2)`, `gainB = sin(x·π/2)` (`src/dsp/curves.ts`).
 - Deck disconnect (`track.onended`): only the source node is disconnected; the chain stays warm.
 
+## Transport worklet port protocol
+
+Each deck's transport worklet (`tabdecks-transport`) talks over its MessagePort:
+
+**main → worklet:** `brake` · `stutter {sliceMs}` · `release` · `pause` · `play` ·
+`setRate {rate}` · `seekBehind {seconds}` · `seekAbs {pos}` · `jumpLive` ·
+`trackMark` · `trackRestart` · `trackExit`. `brakeTime` is a k-rate AudioParam.
+
+**worklet → main:** `status {TransportStatus}` (~20 Hz: mode, gesture, behind, rate,
+playing, absolute readPos/written/oldest, track markers) · `peaks {firstBucket, values}`
+(waveform peaks, 1 per 512 samples) · `error {message}` (worklet latched to passthrough).
+
+Absolute sample positions address the ring buffer (`src/dsp/ring-buffer.ts`); cues and
+waveform buckets use the same addressing (`PeakStore` in `src/audio/transport.ts`).
+
 ## Message protocol
 
 | Message | Direction | Payload | Response |

@@ -12,7 +12,7 @@ _(none yet — cross-cutting concepts: capture handshake, transport modes, FX co
 
 ## Sessions (`sessions/`)
 
-_(YYYY-MM-DD.md logs, most recent first; frontmatter: changed, new_messages, new_config)_
+- [2026-06-13](sessions/2026-06-13.md) — initial build, all phases; biquad-Q-in-dB gotcha; node-web-audio-api render tests
 
 ## Conventions
 
