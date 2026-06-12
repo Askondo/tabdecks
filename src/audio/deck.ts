@@ -1,4 +1,5 @@
 import { faderGain } from '@/dsp/curves';
+import { DeckEq } from './eq';
 import { rampTo } from './ramps';
 import type { DeckId } from '@/messaging/protocol';
 
@@ -12,12 +13,13 @@ export interface DeckPublicState {
 
 /**
  * Per-deck audio chain:
- *   source → [transport: Phase 5] → trim → [EQ: Phase 3] → fxInput → … → fxOutput → fader → xfade
+ *   source → [transport: Phase 5] → trim → EQ → fxInput → … → fxOutput → fader → xfade
  * The chain stays connected ("warm") for the lifetime of the engine; only the
  * source node is swapped on attach/detach so a tab closing never tears it down.
  */
 export class Deck {
   readonly trim: GainNode;
+  readonly eq: DeckEq;
   readonly fxInput: GainNode;
   readonly fxOutput: GainNode;
   readonly fader: GainNode;
@@ -36,6 +38,7 @@ export class Deck {
     private readonly ctx: AudioContext,
   ) {
     this.trim = ctx.createGain();
+    this.eq = new DeckEq(ctx);
     this.fxInput = ctx.createGain();
     this.fxOutput = ctx.createGain();
     this.fader = ctx.createGain();
@@ -43,9 +46,9 @@ export class Deck {
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 2048;
 
-    // EQ (Phase 3) splices between trim and fxInput; FX slots (Phase 4)
-    // between fxInput and fxOutput.
-    this.trim.connect(this.fxInput);
+    // FX slots (Phase 4) splice between fxInput and fxOutput.
+    this.trim.connect(this.eq.input);
+    this.eq.output.connect(this.fxInput);
     this.fxInput.connect(this.fxOutput);
     this.fxOutput.connect(this.fader);
     this.fader.connect(this.xfade);

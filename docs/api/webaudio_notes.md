@@ -22,8 +22,10 @@ changes go through `src/audio/ramps.ts`:
 
 - `DynamicsCompressorNode` adds lookahead latency (~6 ms) — acceptable on master only,
   never per-deck.
-- `BiquadFilterNode` defaults: Q is in dB for peaking, dimensionless for lowpass/highpass.
-  LR4 crossover = two cascaded Butterworth (Q = 0.7071) biquads per edge.
+- `BiquadFilterNode` **Q units differ by type**: for `lowpass`/`highpass` Q is **in dB**
+  (Butterworth = -3.0103 dB, NOT 0.7071 — setting 0.7071 creates a resonant peak that
+  breaks crossover summing by +7 dB); for `peaking`/`notch`/`bandpass` Q is linear.
+  LR4 crossover = two cascaded Butterworth biquads per edge.
 - `AnalyserNode` is passthrough when in-line, or can be a dead-end tap — taps don't need
   to reach the destination to run, as long as some path to destination keeps the graph alive.
 - `MediaStreamAudioSourceNode`: keep a reference to the MediaStream; GC of the stream can

@@ -1,6 +1,17 @@
 import type { AudioEngine } from '@/audio/engine';
 import type { DeckPublicState } from '@/audio/deck';
+import type { EqBand } from '@/audio/eq';
 import type { DeckId } from '@/messaging/protocol';
+
+type EqState = Record<EqBand, { value: number; killed: boolean }>;
+
+function initialEq(): EqState {
+  return {
+    low: { value: 1, killed: false },
+    mid: { value: 1, killed: false },
+    high: { value: 1, killed: false },
+  };
+}
 
 /**
  * Svelte 5 runes mirror of engine state + thin control delegates.
@@ -14,6 +25,7 @@ export class EngineBridge {
   });
   trims = $state<Record<DeckId, number>>({ A: 1, B: 1 });
   faders = $state<Record<DeckId, number>>({ A: 1, B: 1 });
+  eq = $state<Record<DeckId, EqState>>({ A: initialEq(), B: initialEq() });
   crossfade = $state(0.5);
   master = $state(1);
   needsResume = $state(false);
@@ -40,6 +52,16 @@ export class EngineBridge {
   setFader(deck: DeckId, x: number): void {
     this.faders[deck] = x;
     this.engine.setFader(deck, x);
+  }
+
+  setEq(deck: DeckId, band: EqBand, v: number): void {
+    this.eq[deck][band].value = v;
+    this.engine.setEq(deck, band, v);
+  }
+
+  setEqKill(deck: DeckId, band: EqBand, on: boolean): void {
+    this.eq[deck][band].killed = on;
+    this.engine.setEqKill(deck, band, on);
   }
 
   setCrossfade(x: number): void {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EqSection from './EqSection.svelte';
   import Fader from './Fader.svelte';
   import type { EngineBridge } from '@/lib/stores/engine-bridge.svelte';
   import type { DeckId } from '@/messaging/protocol';
@@ -27,6 +28,8 @@
       {/if}
     </p>
   </header>
+
+  <EqSection {bridge} {deck} />
 
   <div class="controls">
     <Fader

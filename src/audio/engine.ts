@@ -2,6 +2,7 @@ import { captureTabAudio } from './capture';
 import { Crossfader } from './crossfader';
 import { Deck } from './deck';
 import { MasterBus } from './master';
+import type { EqBand } from './eq';
 import type { DeckId } from '@/messaging/protocol';
 
 export interface EngineEvents {
@@ -72,6 +73,14 @@ export class AudioEngine {
 
   setFader(deck: DeckId, x: number): void {
     this.guard('setFader', () => this.decks[deck].setFader(x));
+  }
+
+  setEq(deck: DeckId, band: EqBand, v: number): void {
+    this.guard('setEq', () => this.decks[deck].eq.setBand(band, v));
+  }
+
+  setEqKill(deck: DeckId, band: EqBand, on: boolean): void {
+    this.guard('setEqKill', () => this.decks[deck].eq.setKill(band, on));
   }
 
   setCrossfade(x: number): void {
