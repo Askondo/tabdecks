@@ -2,6 +2,7 @@
   import EqSection from './EqSection.svelte';
   import Fader from './Fader.svelte';
   import FxSlot from './FxSlot.svelte';
+  import TransportControls from './TransportControls.svelte';
   import { FX_SLOTS } from '@/audio/deck';
   import type { EngineBridge } from '@/lib/stores/engine-bridge.svelte';
   import type { DeckId } from '@/messaging/protocol';
@@ -32,6 +33,8 @@
   </header>
 
   <EqSection {bridge} {deck} />
+
+  <TransportControls {bridge} {deck} />
 
   <div class="fx-slots">
     {#each Array.from({ length: FX_SLOTS }, (_, i) => i) as slot (slot)}

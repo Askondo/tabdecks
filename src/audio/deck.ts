@@ -1,6 +1,7 @@
 import { faderGain } from '@/dsp/curves';
 import { DeckEq } from './eq';
 import { rampTo } from './ramps';
+import type { DeckTransport } from './transport';
 import type { FxInstance } from './fx/types';
 import type { DeckId } from '@/messaging/protocol';
 
@@ -16,7 +17,7 @@ export interface DeckPublicState {
 
 /**
  * Per-deck audio chain:
- *   source → [transport: Phase 5] → trim → EQ → fxInput → … → fxOutput → fader → xfade
+ *   source → transport worklet → trim → EQ → fxInput → … → fxOutput → fader → xfade
  * The chain stays connected ("warm") for the lifetime of the engine; only the
  * source node is swapped on attach/detach so a tab closing never tears it down.
  */
@@ -42,6 +43,7 @@ export class Deck {
   constructor(
     readonly id: DeckId,
     private readonly ctx: AudioContext,
+    readonly transport: DeckTransport,
   ) {
     this.trim = ctx.createGain();
     this.eq = new DeckEq(ctx);
@@ -52,7 +54,8 @@ export class Deck {
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 2048;
 
-    // FX slots (Phase 4) splice between fxInput and fxOutput.
+    // FX slots splice between fxInput and fxOutput.
+    this.transport.node.connect(this.trim);
     this.trim.connect(this.eq.input);
     this.eq.output.connect(this.fxInput);
     this.fxInput.connect(this.fxOutput);
@@ -65,7 +68,7 @@ export class Deck {
     this.detachSource();
     this.stream = stream;
     this.source = this.ctx.createMediaStreamSource(stream);
-    this.source.connect(this.trim);
+    this.source.connect(this.transport.node);
 
     const track = stream.getAudioTracks()[0];
     track?.addEventListener('ended', () => {

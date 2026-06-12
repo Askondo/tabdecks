@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AudioEngine } from '@/audio/engine';
+  import type { AudioEngine } from '@/audio/engine';
   import { EngineBridge } from '@/lib/stores/engine-bridge.svelte';
   import DeckPanel from '@/lib/components/DeckPanel.svelte';
   import Crossfader from '@/lib/components/Crossfader.svelte';
@@ -8,8 +8,12 @@
   import { onMessage } from '@/messaging/router';
   import type { Message } from '@/messaging/protocol';
 
-  // The engine outlives any UI error — created once, never torn down by the UI.
-  const engine = new AudioEngine();
+  interface Props {
+    engine: AudioEngine;
+  }
+  // The engine outlives any UI error — created and init'd in main.ts before mount.
+  let { engine }: Props = $props();
+  // svelte-ignore state_referenced_locally -- engine is set once and never reassigned
   const bridge = new EngineBridge(engine);
 
   onMessage((msg: Message) => {

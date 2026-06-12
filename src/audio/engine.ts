@@ -2,6 +2,7 @@ import { captureTabAudio } from './capture';
 import { Crossfader } from './crossfader';
 import { Deck } from './deck';
 import { MasterBus } from './master';
+import { DeckTransport, TRANSPORT_WORKLET_URL } from './transport';
 import { getFxDescriptor } from './fx/registry';
 import type { EqBand } from './eq';
 import type { DeckId } from '@/messaging/protocol';
@@ -25,30 +26,42 @@ type Listener<E extends EventName> = (payload: EngineEvents[E]) => void;
  */
 export class AudioEngine {
   readonly ctx: AudioContext;
-  readonly decks: Record<DeckId, Deck>;
   readonly master: MasterBus;
-  readonly crossfader: Crossfader;
+  // Built in init() — the transport worklet module must load first.
+  decks!: Record<DeckId, Deck>;
+  crossfader!: Crossfader;
 
   private listeners = new Map<EventName, Set<Listener<EventName>>>();
 
   constructor() {
     this.ctx = new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
     this.master = new MasterBus(this.ctx);
+    this.ctx.addEventListener('statechange', () =>
+      this.emit('contextState', { state: this.ctx.state }),
+    );
+  }
+
+  /** Loads the transport worklet and builds the deck graph. Must complete
+   *  before any other method is called (mixer main.ts awaits it pre-mount). */
+  async init(): Promise<void> {
+    await this.ctx.audioWorklet.addModule(chrome.runtime.getURL(TRANSPORT_WORKLET_URL));
     this.decks = {
-      A: new Deck('A', this.ctx),
-      B: new Deck('B', this.ctx),
+      A: new Deck('A', this.ctx, new DeckTransport(this.ctx)),
+      B: new Deck('B', this.ctx, new DeckTransport(this.ctx)),
     };
     for (const deck of Object.values(this.decks)) {
       deck.xfade.connect(this.master.input);
       deck.onStateChange = () => this.emit('deckChanged', { deck: deck.id });
+      deck.transport.onError = (message) =>
+        this.emit('engineError', {
+          context: `transport(${deck.id}) latched to passthrough`,
+          error: message,
+        });
     }
     this.crossfader = new Crossfader(
       this.ctx,
       this.decks.A.xfade.gain,
       this.decks.B.xfade.gain,
-    );
-    this.ctx.addEventListener('statechange', () =>
-      this.emit('contextState', { state: this.ctx.state }),
     );
   }
 
@@ -82,6 +95,20 @@ export class AudioEngine {
 
   setEqKill(deck: DeckId, band: EqBand, on: boolean): void {
     this.guard('setEqKill', () => this.decks[deck].eq.setKill(band, on));
+  }
+
+  // ── Transport gestures ─────────────────────────────────────────────────
+
+  brake(deck: DeckId, on: boolean): void {
+    this.guard('brake', () => this.decks[deck].transport.brake(on));
+  }
+
+  stutter(deck: DeckId, on: boolean, sliceMs: number): void {
+    this.guard('stutter', () => this.decks[deck].transport.stutter(on, sliceMs));
+  }
+
+  setBrakeTime(deck: DeckId, seconds: number): void {
+    this.guard('setBrakeTime', () => this.decks[deck].transport.setBrakeTime(seconds));
   }
 
   setCrossfade(x: number): void {

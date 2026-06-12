@@ -13,6 +13,17 @@ export interface FxSlotState {
   params: Record<string, number>;
 }
 
+export interface TransportState {
+  braking: boolean;
+  stuttering: boolean;
+  brakeTime: number;
+  sliceMs: number;
+}
+
+function initialTransport(): TransportState {
+  return { braking: false, stuttering: false, brakeTime: 0.8, sliceMs: 125 };
+}
+
 function initialEq(): EqState {
   return {
     low: { value: 1, killed: false },
@@ -35,6 +46,10 @@ export class EngineBridge {
   faders = $state<Record<DeckId, number>>({ A: 1, B: 1 });
   eq = $state<Record<DeckId, EqState>>({ A: initialEq(), B: initialEq() });
   fx = $state<Record<DeckId, Array<FxSlotState | null>>>({ A: [null, null], B: [null, null] });
+  transport = $state<Record<DeckId, TransportState>>({
+    A: initialTransport(),
+    B: initialTransport(),
+  });
   crossfade = $state(0.5);
   master = $state(1);
   needsResume = $state(false);
@@ -71,6 +86,25 @@ export class EngineBridge {
   setEqKill(deck: DeckId, band: EqBand, on: boolean): void {
     this.eq[deck][band].killed = on;
     this.engine.setEqKill(deck, band, on);
+  }
+
+  brake(deck: DeckId, down: boolean): void {
+    this.transport[deck].braking = down;
+    this.engine.brake(deck, down);
+  }
+
+  stutter(deck: DeckId, down: boolean): void {
+    this.transport[deck].stuttering = down;
+    this.engine.stutter(deck, down, this.transport[deck].sliceMs);
+  }
+
+  setBrakeTime(deck: DeckId, seconds: number): void {
+    this.transport[deck].brakeTime = seconds;
+    this.engine.setBrakeTime(deck, seconds);
+  }
+
+  setStutterSlice(deck: DeckId, sliceMs: number): void {
+    this.transport[deck].sliceMs = sliceMs;
   }
 
   async loadFx(deck: DeckId, slot: number, fxId: string): Promise<void> {
