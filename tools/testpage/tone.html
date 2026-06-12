@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>TabDecks test tone</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #111;
+        color: #eee;
+        font-family: system-ui, sans-serif;
+        transition: background 40ms linear;
+      }
+      body.flash {
+        background: #fff;
+        color: #111;
+      }
+      .panel {
+        text-align: center;
+      }
+      h1 {
+        font-size: 48px;
+        margin: 0 0 12px;
+      }
+      button {
+        font-size: 20px;
+        padding: 12px 28px;
+        cursor: pointer;
+      }
+      p {
+        color: #888;
+        font-size: 14px;
+        max-width: 420px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <h1 id="freq-label"></h1>
+      <button id="start">Start tone + click track</button>
+      <p>
+        Sine tone with a click every second. The page background flashes white in the same frame
+        the click is scheduled — film screen + speaker in slow motion to measure end-to-end
+        latency. Set frequency via <code>?f=440</code>.
+      </p>
+    </div>
+    <script>
+      const freq = Number(new URLSearchParams(location.search).get('f')) || 440;
+      document.getElementById('freq-label').textContent = freq + ' Hz';
+      document.title = freq + ' Hz — TabDecks test tone';
+
+      document.getElementById('start').addEventListener('click', function start() {
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        osc.frequency.value = freq;
+        const oscGain = ctx.createGain();
+        oscGain.gain.value = 0.15;
+        osc.connect(oscGain).connect(ctx.destination);
+        osc.start();
+
+        // Click track: short noise burst every second, flash scheduled alongside.
+        const clickGain = ctx.createGain();
+        clickGain.gain.value = 0.8;
+        clickGain.connect(ctx.destination);
+        function scheduleClick(t) {
+          const buf = ctx.createBuffer(1, 480, ctx.sampleRate); // 10 ms burst
+          const data = buf.getChannelData(0);
+          for (let i = 0; i < data.length; i++) data[i] = (1 - i / data.length) * (Math.random() * 2 - 1);
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.connect(clickGain);
+          src.start(t);
+          const delayMs = Math.max(0, (t - ctx.currentTime) * 1000);
+          setTimeout(() => {
+            document.body.classList.add('flash');
+            setTimeout(() => document.body.classList.remove('flash'), 60);
+          }, delayMs);
+        }
+        let next = ctx.currentTime + 0.5;
+        setInterval(() => {
+          while (next < ctx.currentTime + 1.5) {
+            scheduleClick(next);
+            next += 1;
+          }
+        }, 250);
+
+        this.remove();
+      });
+    </script>
+  </body>
+</html>

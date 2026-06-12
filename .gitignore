@@ -1,0 +1,16 @@
+# Build output
+.output/
+.wxt/
+stats.html
+stats-*.json
+
+# Dependencies
+node_modules/
+
+# Machine-specific config (copy from *.local.cfg.example)
+tools/*.local.cfg
+
+# Editor/OS noise
+.DS_Store
+Thumbs.db
+*.log
