@@ -2,6 +2,7 @@ import { getFxDescriptor } from '@/audio/fx/registry';
 import type { AudioEngine } from '@/audio/engine';
 import type { DeckPublicState } from '@/audio/deck';
 import type { EqBand } from '@/audio/eq';
+import type { TransportMode } from '@/dsp/transport-dsp';
 import type { DeckId } from '@/messaging/protocol';
 
 type EqState = Record<EqBand, { value: number; killed: boolean }>;
@@ -13,15 +14,44 @@ export interface FxSlotState {
   params: Record<string, number>;
 }
 
-export interface TransportState {
+export const CUE_COUNT = 4;
+
+export interface TransportUiState {
   braking: boolean;
   stuttering: boolean;
   brakeTime: number;
   sliceMs: number;
+  mode: TransportMode;
+  playing: boolean;
+  /** Seconds behind the live edge. */
+  behind: number;
+  rate: number;
+  readPos: number;
+  written: number;
+  oldest: number;
+  trackStart: number | null;
+  trackEnd: number | null;
+  /** Absolute cue positions (null = unset). */
+  cues: Array<number | null>;
 }
 
-function initialTransport(): TransportState {
-  return { braking: false, stuttering: false, brakeTime: 0.8, sliceMs: 125 };
+function initialTransport(): TransportUiState {
+  return {
+    braking: false,
+    stuttering: false,
+    brakeTime: 0.8,
+    sliceMs: 125,
+    mode: 'live',
+    playing: true,
+    behind: 0,
+    rate: 1,
+    readPos: 0,
+    written: 0,
+    oldest: 0,
+    trackStart: null,
+    trackEnd: null,
+    cues: Array.from({ length: CUE_COUNT }, () => null),
+  };
 }
 
 function initialEq(): EqState {
@@ -46,7 +76,7 @@ export class EngineBridge {
   faders = $state<Record<DeckId, number>>({ A: 1, B: 1 });
   eq = $state<Record<DeckId, EqState>>({ A: initialEq(), B: initialEq() });
   fx = $state<Record<DeckId, Array<FxSlotState | null>>>({ A: [null, null], B: [null, null] });
-  transport = $state<Record<DeckId, TransportState>>({
+  transport = $state<Record<DeckId, TransportUiState>>({
     A: initialTransport(),
     B: initialTransport(),
   });
@@ -65,6 +95,19 @@ export class EngineBridge {
     });
     engine.on('engineError', ({ context, error }) => {
       this.lastError = `${context}: ${String(error)}`;
+    });
+    engine.on('transportStatus', ({ deck, status }) => {
+      const t = this.transport[deck];
+      t.mode = status.mode;
+      t.playing = status.playing;
+      t.behind = status.behind;
+      t.readPos = status.readPos;
+      t.written = status.written;
+      t.oldest = status.oldest;
+      t.trackStart = status.trackStart;
+      t.trackEnd = status.trackEnd;
+      t.braking = status.gesture === 'brake';
+      t.stuttering = status.gesture === 'stutter';
     });
   }
 
@@ -105,6 +148,57 @@ export class EngineBridge {
 
   setStutterSlice(deck: DeckId, sliceMs: number): void {
     this.transport[deck].sliceMs = sliceMs;
+  }
+
+  togglePlay(deck: DeckId): void {
+    const t = this.transport[deck];
+    if (t.playing) this.engine.pauseDeck(deck);
+    else this.engine.playDeck(deck);
+    t.playing = !t.playing;
+  }
+
+  setRate(deck: DeckId, rate: number): void {
+    this.transport[deck].rate = rate;
+    this.engine.setRate(deck, rate);
+  }
+
+  seekAbs(deck: DeckId, pos: number): void {
+    this.engine.seekAbs(deck, pos);
+  }
+
+  jumpLive(deck: DeckId): void {
+    this.engine.jumpLive(deck);
+  }
+
+  trackMark(deck: DeckId): void {
+    this.engine.trackMark(deck);
+  }
+
+  trackRestart(deck: DeckId): void {
+    this.engine.trackRestart(deck);
+  }
+
+  trackExit(deck: DeckId): void {
+    this.engine.trackExit(deck);
+  }
+
+  /** Unset cue: store the current playhead. Set cue: jump to it. */
+  cue(deck: DeckId, slot: number): void {
+    const t = this.transport[deck];
+    const existing = t.cues[slot];
+    if (existing == null) {
+      t.cues[slot] = t.readPos;
+    } else if (existing >= t.oldest) {
+      this.engine.seekAbs(deck, existing);
+    }
+  }
+
+  clearCue(deck: DeckId, slot: number): void {
+    this.transport[deck].cues[slot] = null;
+  }
+
+  peakBetween(deck: DeckId, fromAbs: number, toAbs: number): number {
+    return this.engine.peakBetween(deck, fromAbs, toAbs);
   }
 
   async loadFx(deck: DeckId, slot: number, fxId: string): Promise<void> {

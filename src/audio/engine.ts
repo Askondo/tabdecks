@@ -5,6 +5,7 @@ import { MasterBus } from './master';
 import { DeckTransport, TRANSPORT_WORKLET_URL } from './transport';
 import { getFxDescriptor } from './fx/registry';
 import type { EqBand } from './eq';
+import type { TransportStatus } from '@/dsp/transport-dsp';
 import type { DeckId } from '@/messaging/protocol';
 
 export interface EngineEvents {
@@ -14,6 +15,8 @@ export interface EngineEvents {
   deckChanged: { deck: DeckId };
   /** AudioContext state changed (suspended/running). */
   contextState: { state: AudioContextState };
+  /** ~20 Hz transport snapshot from a deck's worklet. */
+  transportStatus: { deck: DeckId; status: TransportStatus };
 }
 
 type EventName = keyof EngineEvents;
@@ -57,6 +60,8 @@ export class AudioEngine {
           context: `transport(${deck.id}) latched to passthrough`,
           error: message,
         });
+      deck.transport.onStatus = (status) =>
+        this.emit('transportStatus', { deck: deck.id, status });
     }
     this.crossfader = new Crossfader(
       this.ctx,
@@ -109,6 +114,43 @@ export class AudioEngine {
 
   setBrakeTime(deck: DeckId, seconds: number): void {
     this.guard('setBrakeTime', () => this.decks[deck].transport.setBrakeTime(seconds));
+  }
+
+  pauseDeck(deck: DeckId): void {
+    this.guard('pauseDeck', () => this.decks[deck].transport.pause());
+  }
+
+  playDeck(deck: DeckId): void {
+    this.guard('playDeck', () => this.decks[deck].transport.play());
+  }
+
+  setRate(deck: DeckId, rate: number): void {
+    this.guard('setRate', () => this.decks[deck].transport.setRate(rate));
+  }
+
+  seekAbs(deck: DeckId, pos: number): void {
+    this.guard('seekAbs', () => this.decks[deck].transport.seekAbs(pos));
+  }
+
+  jumpLive(deck: DeckId): void {
+    this.guard('jumpLive', () => this.decks[deck].transport.jumpLive());
+  }
+
+  trackMark(deck: DeckId): void {
+    this.guard('trackMark', () => this.decks[deck].transport.trackMark());
+  }
+
+  trackRestart(deck: DeckId): void {
+    this.guard('trackRestart', () => this.decks[deck].transport.trackRestart());
+  }
+
+  trackExit(deck: DeckId): void {
+    this.guard('trackExit', () => this.decks[deck].transport.trackExit());
+  }
+
+  /** Waveform peak lookup for the UI (absolute sample range). */
+  peakBetween(deck: DeckId, fromAbs: number, toAbs: number): number {
+    return this.decks[deck].transport.peaks.peakBetween(fromAbs, toAbs);
   }
 
   setCrossfade(x: number): void {

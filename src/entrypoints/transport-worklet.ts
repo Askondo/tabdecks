@@ -4,7 +4,6 @@ import { TransportDsp } from '@/dsp/transport-dsp';
 // Runs in AudioWorkletGlobalScope — no window/chrome/DOM. These globals are
 // not in the DOM lib; declared minimally here.
 declare const sampleRate: number;
-declare const currentTime: number;
 declare abstract class AudioWorkletProcessor {
   readonly port: MessagePort;
   constructor(options?: unknown);
@@ -21,11 +20,23 @@ interface ProcessorOptions {
 export type TransportMessage =
   | { type: 'brake' }
   | { type: 'stutter'; sliceMs: number }
-  | { type: 'release' };
+  | { type: 'release' }
+  | { type: 'pause' }
+  | { type: 'play' }
+  | { type: 'setRate'; rate: number }
+  | { type: 'seekBehind'; seconds: number }
+  | { type: 'seekAbs'; pos: number }
+  | { type: 'jumpLive' }
+  | { type: 'trackMark' }
+  | { type: 'trackRestart' }
+  | { type: 'trackExit' };
+
+/** Waveform peak bucket size in samples (≈10.7 ms at 48 kHz). */
+export const PEAK_BUCKET = 512;
+const STATUS_INTERVAL = 2400; // samples ≈ 50 ms
+const PEAKS_PER_POST = 8;
 
 export default defineUnlistedScript(() => {
-  void currentTime; // keep the declared global referenced
-
   class TransportProcessor extends AudioWorkletProcessor {
     static get parameterDescriptors() {
       return [
@@ -44,6 +55,14 @@ export default defineUnlistedScript(() => {
      *  forever and report once — a DSP bug degrades, never silences. */
     private broken = false;
 
+    // Waveform peak accumulation over the INPUT (recorded history).
+    private absPos = 0;
+    private peakAcc = 0;
+    private bucketFill = 0;
+    private pendingPeaks: number[] = [];
+    private pendingFirstBucket = -1;
+    private samplesSinceStatus = 0;
+
     constructor(options?: unknown) {
       super(options);
       const historySeconds =
@@ -54,9 +73,20 @@ export default defineUnlistedScript(() => {
 
     private handle(msg: TransportMessage): void {
       try {
-        if (msg.type === 'brake') this.dsp.brake();
-        else if (msg.type === 'stutter') this.dsp.stutter((msg.sliceMs ?? 125) / 1000);
-        else if (msg.type === 'release') this.dsp.release();
+        switch (msg.type) {
+          case 'brake': this.dsp.brake(); break;
+          case 'stutter': this.dsp.stutter((msg.sliceMs ?? 125) / 1000); break;
+          case 'release': this.dsp.release(); break;
+          case 'pause': this.dsp.pause(); break;
+          case 'play': this.dsp.play(); break;
+          case 'setRate': this.dsp.setRate(msg.rate); break;
+          case 'seekBehind': this.dsp.seekBehind(msg.seconds); break;
+          case 'seekAbs': this.dsp.seekAbs(msg.pos); break;
+          case 'jumpLive': this.dsp.jumpLive(); break;
+          case 'trackMark': this.dsp.trackMark(); break;
+          case 'trackRestart': this.dsp.trackRestart(); break;
+          case 'trackExit': this.dsp.trackExit(); break;
+        }
       } catch (e) {
         this.fail(e);
       }
@@ -73,6 +103,8 @@ export default defineUnlistedScript(() => {
           if (brakeTime !== undefined) this.dsp.setBrakeTime(brakeTime);
           const input = inputs[0]?.length ? inputs[0] : null;
           this.dsp.processBlock(input, outputs[0] ?? []);
+          this.accumulatePeaks(input, outputs[0]?.[0]?.length ?? 128);
+          this.maybePostStatus(outputs[0]?.[0]?.length ?? 128);
           return true;
         }
       } catch (e) {
@@ -86,6 +118,43 @@ export default defineUnlistedScript(() => {
         if (src) out[ch]!.set(src);
       }
       return true;
+    }
+
+    private accumulatePeaks(input: Float32Array[] | null, n: number): void {
+      const l = input?.[0];
+      const r = input?.[1] ?? l;
+      for (let i = 0; i < n; i++) {
+        const v = l ? Math.max(Math.abs(l[i]!), Math.abs(r![i]!)) : 0;
+        if (v > this.peakAcc) this.peakAcc = v;
+        this.bucketFill++;
+        this.absPos++;
+        if (this.bucketFill === PEAK_BUCKET) {
+          const bucket = Math.floor((this.absPos - 1) / PEAK_BUCKET);
+          if (this.pendingFirstBucket < 0) this.pendingFirstBucket = bucket;
+          this.pendingPeaks.push(this.peakAcc);
+          this.peakAcc = 0;
+          this.bucketFill = 0;
+          if (this.pendingPeaks.length >= PEAKS_PER_POST) this.flushPeaks();
+        }
+      }
+    }
+
+    private flushPeaks(): void {
+      if (!this.pendingPeaks.length) return;
+      this.port.postMessage({
+        type: 'peaks',
+        firstBucket: this.pendingFirstBucket,
+        values: Float32Array.from(this.pendingPeaks),
+      });
+      this.pendingPeaks = [];
+      this.pendingFirstBucket = -1;
+    }
+
+    private maybePostStatus(n: number): void {
+      this.samplesSinceStatus += n;
+      if (this.samplesSinceStatus < STATUS_INTERVAL) return;
+      this.samplesSinceStatus = 0;
+      this.port.postMessage({ type: 'status', status: this.dsp.status });
     }
 
     private fail(e: unknown): void {

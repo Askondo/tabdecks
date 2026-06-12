@@ -3,6 +3,7 @@
   import Fader from './Fader.svelte';
   import FxSlot from './FxSlot.svelte';
   import TransportControls from './TransportControls.svelte';
+  import WaveformStrip from './WaveformStrip.svelte';
   import { FX_SLOTS } from '@/audio/deck';
   import type { EngineBridge } from '@/lib/stores/engine-bridge.svelte';
   import type { DeckId } from '@/messaging/protocol';
@@ -31,6 +32,8 @@
       {/if}
     </p>
   </header>
+
+  <WaveformStrip {bridge} {deck} />
 
   <EqSection {bridge} {deck} />
 
