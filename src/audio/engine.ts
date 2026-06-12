@@ -2,6 +2,7 @@ import { captureTabAudio } from './capture';
 import { Crossfader } from './crossfader';
 import { Deck } from './deck';
 import { MasterBus } from './master';
+import { getFxDescriptor } from './fx/registry';
 import type { EqBand } from './eq';
 import type { DeckId } from '@/messaging/protocol';
 
@@ -89,6 +90,44 @@ export class AudioEngine {
 
   setMaster(v: number): void {
     this.guard('setMaster', () => this.master.setGain(v));
+  }
+
+  // ── FX ─────────────────────────────────────────────────────────────────
+
+  private loadedWorklets = new Set<string>();
+
+  /** Load a registered FX into a deck slot (loads its worklets on first use). */
+  async loadFx(deck: DeckId, slot: number, fxId: string): Promise<void> {
+    try {
+      const descriptor = getFxDescriptor(fxId);
+      if (!descriptor) throw new Error(`Unknown FX: ${fxId}`);
+      for (const url of descriptor.workletModules ?? []) {
+        if (!this.loadedWorklets.has(url)) {
+          await this.ctx.audioWorklet.addModule(chrome.runtime.getURL(url));
+          this.loadedWorklets.add(url);
+        }
+      }
+      this.decks[deck].setFx(slot, descriptor.create(this.ctx));
+    } catch (error) {
+      this.emit('engineError', { context: `loadFx(${deck}, ${slot}, ${fxId})`, error });
+      throw error;
+    }
+  }
+
+  unloadFx(deck: DeckId, slot: number): void {
+    this.guard('unloadFx', () => this.decks[deck].setFx(slot, null));
+  }
+
+  setFxParam(deck: DeckId, slot: number, paramId: string, value: number): void {
+    this.guard('setFxParam', () => this.decks[deck].fx[slot]?.setParam(paramId, value));
+  }
+
+  setFxWet(deck: DeckId, slot: number, mix: number): void {
+    this.guard('setFxWet', () => this.decks[deck].fx[slot]?.setWet(mix));
+  }
+
+  setFxBypass(deck: DeckId, slot: number, bypassed: boolean): void {
+    this.guard('setFxBypass', () => this.decks[deck].fx[slot]?.setBypass(bypassed));
   }
 
   async resume(): Promise<void> {

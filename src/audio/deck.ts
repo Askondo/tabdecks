@@ -1,7 +1,10 @@
 import { faderGain } from '@/dsp/curves';
 import { DeckEq } from './eq';
 import { rampTo } from './ramps';
+import type { FxInstance } from './fx/types';
 import type { DeckId } from '@/messaging/protocol';
+
+export const FX_SLOTS = 2;
 
 export type DeckStatus = 'empty' | 'live' | 'disconnected' | 'error';
 
@@ -32,6 +35,9 @@ export class Deck {
   private source: MediaStreamAudioSourceNode | null = null;
   // Hold the stream reference — GC of a captured MediaStream can kill audio.
   private stream: MediaStream | null = null;
+
+  /** Serial insert FX slots between fxInput and fxOutput. */
+  readonly fx: Array<FxInstance | null> = Array.from({ length: FX_SLOTS }, () => null);
 
   constructor(
     readonly id: DeckId,
@@ -89,5 +95,35 @@ export class Deck {
   setState(state: DeckPublicState): void {
     this.state = state;
     this.onStateChange?.();
+  }
+
+  /**
+   * Load (or clear, with null) an FX slot. The chain resplice dips fxInput to
+   * silence for ~25 ms around the topology change — inaudible, never a click.
+   * The replaced instance is disposed after the dip completes.
+   */
+  setFx(slot: number, instance: FxInstance | null): void {
+    const old = this.fx[slot] ?? null;
+    this.fx[slot] = instance;
+
+    rampTo(this.ctx, this.fxInput.gain, 0, 0.004);
+    setTimeout(() => {
+      this.rebuildFxChain();
+      old?.dispose();
+      rampTo(this.ctx, this.fxInput.gain, 1, 0.004);
+    }, 25);
+  }
+
+  private rebuildFxChain(): void {
+    this.fxInput.disconnect();
+    for (const fx of this.fx) fx?.output.disconnect();
+
+    let node: AudioNode = this.fxInput;
+    for (const fx of this.fx) {
+      if (!fx) continue;
+      node.connect(fx.input);
+      node = fx.output;
+    }
+    node.connect(this.fxOutput);
   }
 }

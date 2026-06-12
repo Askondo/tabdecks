@@ -1,6 +1,8 @@
 <script lang="ts">
   import EqSection from './EqSection.svelte';
   import Fader from './Fader.svelte';
+  import FxSlot from './FxSlot.svelte';
+  import { FX_SLOTS } from '@/audio/deck';
   import type { EngineBridge } from '@/lib/stores/engine-bridge.svelte';
   import type { DeckId } from '@/messaging/protocol';
 
@@ -30,6 +32,12 @@
   </header>
 
   <EqSection {bridge} {deck} />
+
+  <div class="fx-slots">
+    {#each Array.from({ length: FX_SLOTS }, (_, i) => i) as slot (slot)}
+      <FxSlot {bridge} {deck} {slot} />
+    {/each}
+  </div>
 
   <div class="controls">
     <Fader
@@ -89,5 +97,10 @@
     display: flex;
     justify-content: center;
     gap: 28px;
+  }
+  .fx-slots {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 </style>
