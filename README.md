@@ -17,6 +17,60 @@ Everything the tab has played gets buffered, so each deck is a **timeshift trans
 pause, scrub backward, varispeed, brake, and stutter over buffered history; after a song has
 played through once, the deck offers full track control (seek, cues, loops).
 
+## Install in Chrome
+
+TabDecks isn't on the Chrome Web Store yet — install it as an unpacked extension:
+
+1. Build the extension:
+   ```bash
+   npm install
+   npm run build      # → .output/chrome-mv3
+   ```
+2. Open `chrome://extensions` in Chrome.
+3. Enable **Developer mode** (toggle in the top-right corner).
+4. Click **Load unpacked** and select the `.output/chrome-mv3` folder.
+5. Pin the TabDecks icon from the extensions toolbar menu for quick access.
+
+After making changes, run `npm run build` again and click the reload icon on the
+TabDecks card in `chrome://extensions`.
+
+## Ableton Link sync (optional)
+
+TabDecks can lock both decks' tempo and phase to an [Ableton Link](https://www.ableton.com/en/link/)
+session (Ableton Live, other Link-enabled apps, or other TabDecks instances) via a small local
+native-messaging bridge ([Carabiner](https://github.com/Deep-Symmetry/carabiner)). Link is not
+required for normal use — it's an additive sync source alongside TabDecks' own deck-to-deck sync.
+
+**Setup (one-time, after installing the extension above):**
+
+```bash
+npm run link:install
+```
+
+This downloads the pinned Carabiner release into `tools/link-bridge/bin/`, writes a native-messaging
+host manifest (`com.tabdecks.link`), and registers it with Chrome (Windows: `HKCU` registry key;
+macOS/Linux: `NativeMessagingHosts` directory). The manifest is scoped to TabDecks' extension ID,
+which is fixed by the pinned `key` in [wxt.config.ts](wxt.config.ts) — this only works against the
+build produced by `npm run build` / `npm run chrome`, not arbitrary dev builds with a different ID.
+
+**Using it:**
+
+1. Reload the TabDecks extension (`chrome://extensions` → reload).
+2. Open the mixer window and click **LINK** in the routing panel.
+3. The status dot turns green and shows peer count + BPM once connected to a Link session.
+4. Optionally click **USE AS MASTER** to slave both decks' tempo/phase to the Link session clock.
+
+If the bridge can't connect, the panel shows an error and a hint to re-run `npm run link:install`.
+
+**Uninstall:**
+
+```bash
+npm run link:uninstall
+```
+
+Removes the registry key / manifest file. The downloaded Carabiner binary is left in
+`tools/link-bridge/bin/` — delete it by hand if you want it gone too.
+
 ## Honest limitations
 
 - **No seeking forward past "now"** — capture is a live stream; the buffer only contains

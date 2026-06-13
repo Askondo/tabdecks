@@ -10,6 +10,12 @@ node_modules/
 # Machine-specific config (copy from *.local.cfg.example)
 tools/*.local.cfg
 
+# Ableton Link bridge — downloaded binary + generated host manifest/shim
+tools/link-bridge/bin/
+tools/link-bridge/com.tabdecks.link.json
+tools/link-bridge/run-bridge.cmd
+tools/link-bridge/run-bridge.sh
+
 # Editor/OS noise
 .DS_Store
 Thumbs.db
