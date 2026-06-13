@@ -46,6 +46,19 @@ first enters timeshift.
 - Master = a deck or `'link'`. `MasterClock` abstraction lets Link drive the same PLL
   (see link_carabiner.md) with no math changes.
 
+## Key-lock / WSOLA (`src/dsp/wsola.ts`)
+
+- Tempo without pitch on the timeshift/track playhead. When `keylock` is on and
+  `|rate−1| > 1e-3` and the block is clear of boundaries, `processPlayhead` uses
+  `Wsola.process(out, n, rate, read)` instead of the per-sample varispeed read.
+- WSOLA: Hann frames (~21 ms), 50 % overlap-add, ±5 ms similarity search aligning each
+  frame to the previous frame's natural continuation (correlation on ch0, same offset all
+  channels). Output is pitch-1.0; input consumed at `rate`. `readPos` mirrors `wsola.inputPos`.
+- Bails to per-sample on the block containing a loop wrap / track end, and stays clear of
+  the live edge by `wsola.frameReach` (frame + search). Path switches pass through the
+  standard discontinuity fade. Brake stays pitch-coupled (that's the effect); stutter and
+  live are unaffected.
+
 ## Bar loops (`TransportDsp.setLoop`)
 
 - Grid-aligned absolute `[start, end)`; engine computes them from the current bar downbeat

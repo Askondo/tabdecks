@@ -43,6 +43,14 @@
   >
     M
   </button>
+  <button
+    class="keylock"
+    class:on={bridge.config.keylock[deck]}
+    onclick={() => bridge.setKeylock(deck, !bridge.config.keylock[deck])}
+    title="Key-lock: tempo without pitch (varispeed when off)"
+  >
+    KEY
+  </button>
 </div>
 
 <style>
@@ -83,6 +91,11 @@
   }
   .phasebtn:active {
     background: #4f7cff;
+    color: #fff;
+  }
+  .keylock.on {
+    background: #16a34a;
+    border-color: #16a34a;
     color: #fff;
   }
 </style>

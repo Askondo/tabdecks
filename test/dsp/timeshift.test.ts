@@ -133,6 +133,36 @@ describe('varispeed', () => {
   });
 });
 
+describe('key-lock (WSOLA)', () => {
+  function zc(data: number[], from: number, to: number): number {
+    let c = 0;
+    for (let i = from + 1; i < to; i++) {
+      if ((data[i - 1]! < 0 && data[i]! >= 0) || (data[i - 1]! >= 0 && data[i]! < 0)) c++;
+    }
+    return c;
+  }
+
+  it('preserves pitch under varispeed when engaged (vs. pitch drop without)', () => {
+    const make = (keylock: boolean) => {
+      const h = new Harness(sine440);
+      h.runSeconds(4);
+      h.dsp.seekBehind(2); // playhead 2 s behind live → safe WSOLA headroom
+      if (keylock) h.dsp.setKeylock(true);
+      h.dsp.setRate(0.8);
+      h.runSeconds(1.5);
+      const start = h.out.length - Math.floor(0.8 * SR);
+      return zc(h.out, start, h.out.length);
+    };
+    const plain = make(false); // varispeed → ~0.8×440 ≈ 352 Hz
+    const locked = make(true); // key-lock → ~440 Hz preserved
+    const plainHz = (plain / 2 / (0.8 * SR)) * SR;
+    const lockedHz = (locked / 2 / (0.8 * SR)) * SR;
+    expect(plainHz).toBeGreaterThan(330);
+    expect(plainHz).toBeLessThan(375);
+    expect(Math.abs(lockedHz - 440) / 440).toBeLessThan(0.05);
+  });
+});
+
 describe('track mode', () => {
   it('marks a region, plays it, auto-pauses at the end, restarts', () => {
     const h = new Harness(ramp);

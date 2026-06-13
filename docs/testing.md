@@ -47,6 +47,7 @@ Opens Chrome (dedicated profile) with the extension loaded and two test-tone pag
 - [ ] SYNC deck B to A → audible beatmatch lock; SYNC button glows "locked"; PHASE one-shot snaps alignment.
 - [ ] Ableton Link: `npm run link:install`, reload extension, enable LINK → peers/BPM show; open Ableton Live (or LinkHut) on the same machine → tempo follows both directions; "USE AS MASTER" slaves both decks to Live's grid; quantized launch lands on Live's bar.
 - [ ] Routing: OUT → speakers, CUE → headphones; PFL (🎧) deck B → B audible only in headphones (pre-fader, independent of crossfader).
+- [ ] Key-lock: timeshift a deck, KEY on, varispeed ±8% → pitch stays constant by ear/spectrum; KEY off → pitch follows speed (vinyl). Setting persists across reload (config pane / per-deck KEY).
 
 ## 4. Musical QA (real content)
 

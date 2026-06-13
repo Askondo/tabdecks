@@ -1,6 +1,7 @@
 // Pure TS transport DSP — no Web Audio types. Runs inside the AudioWorklet
 // (src/entrypoints/transport-worklet.ts) and in node unit tests.
 import { RingBuffer } from './ring-buffer';
+import { Wsola } from './wsola';
 
 export type TransportGesture = 'none' | 'brake' | 'stutter';
 export type TransportMode = 'live' | 'timeshift' | 'track';
@@ -100,6 +101,7 @@ export class TransportDsp {
   private fadePos = Number.MAX_SAFE_INTEGER;
 
   private readonly pendingActions: PendingAction[] = [];
+  private readonly wsola: Wsola;
 
   constructor(
     readonly sampleRate: number,
@@ -112,6 +114,7 @@ export class TransportDsp {
     this.xfadeLen = Math.max(8, Math.round(0.005 * sampleRate));
     // ~10 ms time constant for rate changes (pause/play/varispeed).
     this.rateSmoothing = 1 - Math.exp(-1 / (0.01 * sampleRate));
+    this.wsola = new Wsola(sampleRate, channels);
   }
 
   // ── Status ───────────────────────────────────────────────────────────────
@@ -279,11 +282,13 @@ export class TransportDsp {
     this.barLoopEnd = null;
   }
 
-  /** Key-lock (tempo without pitch). The WSOLA path lands in T7; this stores
-   *  the flag so the control surface is complete and forward-compatible. */
-  protected keylock = false;
+  /** Key-lock (tempo without pitch) via WSOLA on the timeshift/track playhead. */
+  private keylock = false;
+  private wsolaActive = false;
   setKeylock(on: boolean): void {
+    if (on === this.keylock) return;
     this.keylock = on;
+    if (!on) this.wsolaActive = false;
   }
 
   // ── Quantize scheduling ──────────────────────────────────────────────────
@@ -430,8 +435,56 @@ export class TransportDsp {
     }
   }
 
-  /** Timeshift/track playback: smoothed varispeed, live-edge / track-end clamps. */
+  /** True if a loop wrap, track end, or the live edge falls inside the next
+   *  `n` output samples at the current rate — WSOLA bails to the per-sample
+   *  path on those blocks so wraps/clamps stay sample-exact. */
+  private blockHasBoundary(n: number): boolean {
+    const reach = this.readPos + Math.abs(this.currentRate) * n;
+    if (this.barLoopEnd !== null && reach >= this.barLoopEnd) return true;
+    if (this.mode === 'track' && this.trackEnd !== null && reach >= this.trackEnd) return true;
+    // WSOLA also reads a frame + search ahead; require comfortable headroom
+    // below the live edge (it can't read unwritten future samples).
+    return reach + this.wsola.frameReach >= this.rings[0]!.written;
+  }
+
+  /** Timeshift/track playback: smoothed varispeed, live-edge / track-end clamps,
+   *  optional WSOLA key-lock (pitch-preserving) when engaged and clear of boundaries. */
   private processPlayhead(output: Float32Array[], n: number): void {
+    const target = this.playing ? this.userRate : 0;
+
+    if (
+      this.keylock &&
+      this.playing &&
+      Math.abs(this.currentRate - 1) > 1e-3 &&
+      !this.blockHasBoundary(n)
+    ) {
+      // Block-rate smoothing toward target (per-sample smoothing isn't needed —
+      // WSOLA tolerates a constant rate per block).
+      this.currentRate += (target - this.currentRate) * this.rateSmoothing * n;
+      this.currentRate = Math.max(0.05, this.currentRate);
+      if (!this.wsolaActive) {
+        this.wsola.reset(this.readPos);
+        this.wsolaActive = true;
+        this.startFade();
+      }
+      this.wsola.process(output, n, this.currentRate, (ch, pos) => this.rings[ch]!.readAt(pos));
+      this.readPos = this.wsola.inputPos;
+      // Discontinuity fade from lastOut (covers the entry transition).
+      for (let i = 0; i < n; i++) {
+        const w = this.nextFadeWeight();
+        if (w >= 1) break;
+        for (let ch = 0; ch < this.channels; ch++) {
+          const out = output[ch];
+          if (out) out[i] = this.lastOut[ch]! * (1 - w) + out[i]! * w;
+        }
+      }
+      return;
+    }
+    if (this.wsolaActive) {
+      this.wsolaActive = false;
+      this.startFade();
+    }
+
     const liveEdge = () => this.rings[0]!.written - n + 0; // conservative edge
     const trackEnd = this.mode === 'track' ? this.trackEnd : null;
 
