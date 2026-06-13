@@ -1,10 +1,12 @@
 import { defineUnlistedScript } from '#imports';
 import { OnsetDetector } from '@/dsp/onset-detect';
 import { TransportDsp } from '@/dsp/transport-dsp';
+import type { ScheduleDomain, ScheduledAction } from '@/dsp/transport-dsp';
 
 // Runs in AudioWorkletGlobalScope — no window/chrome/DOM. These globals are
 // not in the DOM lib; declared minimally here.
 declare const sampleRate: number;
+declare const currentTime: number;
 declare abstract class AudioWorkletProcessor {
   readonly port: MessagePort;
   constructor(options?: unknown);
@@ -30,7 +32,9 @@ export type TransportMessage =
   | { type: 'jumpLive' }
   | { type: 'trackMark' }
   | { type: 'trackRestart' }
-  | { type: 'trackExit' };
+  | { type: 'trackExit' }
+  | { type: 'schedule'; at: number; domain: ScheduleDomain; action: ScheduledAction }
+  | { type: 'cancelScheduled'; kind?: ScheduledAction['type'] };
 
 /** Waveform peak bucket size in samples (≈10.7 ms at 48 kHz). */
 export const PEAK_BUCKET = 512;
@@ -97,6 +101,8 @@ export default defineUnlistedScript(() => {
           case 'trackMark': this.dsp.trackMark(); break;
           case 'trackRestart': this.dsp.trackRestart(); break;
           case 'trackExit': this.dsp.trackExit(); break;
+          case 'schedule': this.dsp.schedule(msg.at, msg.domain, msg.action); break;
+          case 'cancelScheduled': this.dsp.cancelScheduled(msg.kind); break;
         }
       } catch (e) {
         this.fail(e);
@@ -180,7 +186,9 @@ export default defineUnlistedScript(() => {
       this.samplesSinceStatus += n;
       if (this.samplesSinceStatus < STATUS_INTERVAL) return;
       this.samplesSinceStatus = 0;
-      this.port.postMessage({ type: 'status', status: this.dsp.status });
+      // ctxTime lets the main thread map absolute samples ↔ AudioContext time
+      // (quantized AudioParam scheduling).
+      this.port.postMessage({ type: 'status', status: this.dsp.status, ctxTime: currentTime });
     }
 
     private fail(e: unknown): void {

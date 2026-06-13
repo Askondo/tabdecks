@@ -34,6 +34,8 @@ export interface TransportUiState {
   trackEnd: number | null;
   /** Absolute cue positions (null = unset). */
   cues: Array<number | null>;
+  /** Quantize-scheduled actions waiting in the worklet (armed indicator). */
+  pending: number;
 }
 
 function initialTransport(): TransportUiState {
@@ -52,6 +54,7 @@ function initialTransport(): TransportUiState {
     trackStart: null,
     trackEnd: null,
     cues: Array.from({ length: CUE_COUNT }, () => null),
+    pending: 0,
   };
 }
 
@@ -116,6 +119,7 @@ export class EngineBridge {
       t.trackEnd = status.trackEnd;
       t.braking = status.gesture === 'brake';
       t.stuttering = status.gesture === 'stutter';
+      t.pending = status.pending;
     });
   }
 
@@ -207,6 +211,19 @@ export class EngineBridge {
 
   peakBetween(deck: DeckId, fromAbs: number, toAbs: number): number {
     return this.engine.peakBetween(deck, fromAbs, toAbs);
+  }
+
+  quantize = $state({ enabled: false, quantum: 1 });
+
+  setQuantize(enabled: boolean, quantum?: number): void {
+    this.quantize.enabled = enabled;
+    if (quantum !== undefined) this.quantize.quantum = quantum;
+    this.engine.setQuantize(enabled, quantum);
+  }
+
+  cutTo(deck: DeckId): void {
+    this.crossfade = deck === 'A' ? 0 : 1;
+    this.engine.cutTo(deck);
   }
 
   tapTempo(deck: DeckId): void {

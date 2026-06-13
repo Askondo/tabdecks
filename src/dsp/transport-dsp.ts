@@ -5,6 +5,24 @@ import { RingBuffer } from './ring-buffer';
 export type TransportGesture = 'none' | 'brake' | 'stutter';
 export type TransportMode = 'live' | 'timeshift' | 'track';
 
+/** Actions that can be quantize-scheduled at a grid boundary. */
+export type ScheduledAction =
+  | { type: 'stutter'; sliceSeconds: number }
+  | { type: 'brake' }
+  | { type: 'seekAbs'; target: number }
+  | { type: 'play' }
+  | { type: 'pause' }
+  | { type: 'trackRestart' };
+
+export type ScheduleDomain = 'written' | 'readPos';
+
+interface PendingAction {
+  /** Absolute sample boundary (grid-exact anchor). */
+  at: number;
+  domain: ScheduleDomain;
+  action: ScheduledAction;
+}
+
 export interface TransportStatus {
   mode: TransportMode;
   gesture: TransportGesture;
@@ -19,6 +37,8 @@ export interface TransportStatus {
   oldest: number;
   trackStart: number | null;
   trackEnd: number | null;
+  /** Number of quantize-scheduled actions still waiting. */
+  pending: number;
 }
 
 /**
@@ -72,6 +92,8 @@ export class TransportDsp {
   /** Samples remaining of the post-discontinuity fade. */
   private fadeRemaining = 0;
 
+  private readonly pendingActions: PendingAction[] = [];
+
   constructor(
     readonly sampleRate: number,
     historySeconds: number,
@@ -101,6 +123,7 @@ export class TransportDsp {
       oldest: this.rings[0]!.oldest,
       trackStart: this.trackStart,
       trackEnd: this.trackEnd,
+      pending: this.pendingActions.length,
     };
   }
 
@@ -111,19 +134,27 @@ export class TransportDsp {
   }
 
   brake(): void {
+    this.brakeFrom(this.mode === 'live' ? this.rings[0]!.written : this.readPos);
+  }
+
+  /** Brake with an explicit start position (quantized: the grid boundary). */
+  brakeFrom(pos: number): void {
     if (this.gesture !== 'none') return;
     this.preGestureMode = this.mode;
-    if (this.mode === 'live') this.readPos = this.rings[0]!.written;
+    this.readPos = Math.min(pos, this.rings[0]!.written);
     // Brake decelerates from whatever speed the platter currently has.
     this.brakeRate = this.mode === 'live' ? 1 : this.currentRate;
     this.gesture = 'brake';
   }
 
-  stutter(sliceSeconds: number): void {
+  /** Stutter; loopEnd defaults to "now" but quantized triggers anchor it to
+   *  the grid boundary for sample-exact loop alignment. */
+  stutter(sliceSeconds: number, loopEnd?: number): void {
     if (this.gesture === 'stutter') return;
     this.preGestureMode = this.gesture === 'none' ? this.mode : this.preGestureMode;
     const len = Math.max(this.xfadeLen * 2, Math.round(sliceSeconds * this.sampleRate));
-    this.loopEnd = this.mode === 'live' ? this.rings[0]!.written : this.readPos;
+    const defaultEnd = this.mode === 'live' ? this.rings[0]!.written : this.readPos;
+    this.loopEnd = Math.min(loopEnd ?? defaultEnd, this.rings[0]!.written);
     this.loopLen = len;
     this.loopPos = 0;
     this.gesture = 'stutter';
@@ -212,6 +243,81 @@ export class TransportDsp {
     if (this.mode === 'track') this.jumpLive();
   }
 
+  // ── Quantize scheduling ──────────────────────────────────────────────────
+
+  /**
+   * Queue an action to fire when the chosen clock crosses `at` (absolute
+   * samples). Execution is block-granular, but every action is applied with
+   * its grid-exact anchor (stutter loops end exactly at `at`; seeks land at
+   * `target + elapsed-since-boundary`), so musical phase is sample-exact.
+   * A new schedule of the same action type replaces the pending one.
+   */
+  schedule(at: number, domain: ScheduleDomain, action: ScheduledAction): void {
+    this.cancelScheduled(action.type);
+    this.pendingActions.push({ at, domain, action });
+  }
+
+  cancelScheduled(type?: ScheduledAction['type']): void {
+    if (type === undefined) {
+      this.pendingActions.length = 0;
+      return;
+    }
+    const idx = this.pendingActions.findIndex((p) => p.action.type === type);
+    if (idx >= 0) this.pendingActions.splice(idx, 1);
+  }
+
+  /** blockLen: samples of the block ABOUT to be rendered. Firing happens
+   *  after recording but before rendering, so the anchor "now" for the
+   *  written clock is the START of that block (written - blockLen). */
+  private fireDue(blockLen: number): void {
+    if (!this.pendingActions.length) return;
+    const written = this.rings[0]!.written;
+    for (let i = this.pendingActions.length - 1; i >= 0; i--) {
+      const p = this.pendingActions[i]!;
+      if (p.domain === 'written') {
+        if (written < p.at) continue; // boundary not inside this block yet
+        this.pendingActions.splice(i, 1);
+        // Anchor at the block START (may precede the boundary): a seek lands
+        // slightly before target so the playhead crosses target exactly at
+        // the boundary instant — phase-exact despite block granularity.
+        this.execute(p, written - blockLen);
+      } else {
+        if (this.readPos < p.at) continue;
+        this.pendingActions.splice(i, 1);
+        this.execute(p, this.readPos);
+      }
+    }
+  }
+
+  private execute(p: PendingAction, now: number): void {
+    const a = p.action;
+    switch (a.type) {
+      case 'stutter':
+        // Anchored: the loop ends exactly at the boundary regardless of
+        // block-granular execution.
+        this.stutter(a.sliceSeconds, p.at);
+        break;
+      case 'brake':
+        this.brakeFrom(p.at);
+        break;
+      case 'seekAbs':
+        // Land in phase: carry the elapsed time since the boundary over to
+        // the target position.
+        this.seekAbs(a.target + (now - p.at));
+        break;
+      case 'play':
+        this.play();
+        break;
+      case 'pause':
+        this.pause();
+        break;
+      case 'trackRestart':
+        this.trackRestart();
+        this.play();
+        break;
+    }
+  }
+
   // ── Processing ───────────────────────────────────────────────────────────
 
   /**
@@ -230,7 +336,10 @@ export class TransportDsp {
       this.rings[ch]!.write(src, n);
     }
 
-    // 2. Play.
+    // 2. Fire any quantize-scheduled actions whose boundary was crossed.
+    this.fireDue(n);
+
+    // 3. Play.
     if (this.gesture === 'brake') this.processBrake(output, n);
     else if (this.gesture === 'stutter') this.processStutter(output, n);
     else if (this.mode === 'live') this.processLive(input, output, n);

@@ -1,5 +1,5 @@
 import { equalPowerPair } from '@/dsp/curves';
-import { RAMP, rampTo } from '../ramps';
+import { RAMP, rampAt, rampTo } from '../ramps';
 import type { FxInstance } from './types';
 
 export interface WetSubgraph {
@@ -32,11 +32,16 @@ export function createFxShell(ctx: BaseAudioContext, wet: WetSubgraph): FxInstan
   let mix = 0.5;
   let bypassed = false;
 
-  function apply(): void {
+  function apply(atTime?: number): void {
     const effective = bypassed ? 0 : mix;
     const [dry, wetLevel] = equalPowerPair(effective);
-    rampTo(ctx, dryGain.gain, dry, RAMP.fx);
-    rampTo(ctx, wetGain.gain, wetLevel, RAMP.fx);
+    if (atTime === undefined) {
+      rampTo(ctx, dryGain.gain, dry, RAMP.fx);
+      rampTo(ctx, wetGain.gain, wetLevel, RAMP.fx);
+    } else {
+      rampAt(ctx, dryGain.gain, dry, atTime, RAMP.fx);
+      rampAt(ctx, wetGain.gain, wetLevel, atTime, RAMP.fx);
+    }
   }
   apply();
 
@@ -48,9 +53,9 @@ export function createFxShell(ctx: BaseAudioContext, wet: WetSubgraph): FxInstan
       mix = m;
       apply();
     },
-    setBypass(b: boolean) {
+    setBypass(b: boolean, atTime?: number) {
       bypassed = b;
-      apply();
+      apply(atTime);
     },
     dispose() {
       wet.dispose?.();

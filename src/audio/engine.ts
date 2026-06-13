@@ -107,14 +107,61 @@ export class AudioEngine {
     this.guard('setEqKill', () => this.decks[deck].eq.setKill(band, on));
   }
 
+  // ── Quantization ───────────────────────────────────────────────────────
+
+  /** Global quantize config (per-action toggles arrive with the config pane). */
+  readonly quantize = { enabled: false, quantumBeats: 1 };
+
+  setQuantize(enabled: boolean, quantumBeats?: number): void {
+    this.quantize.enabled = enabled;
+    if (quantumBeats !== undefined) this.quantize.quantumBeats = quantumBeats;
+    if (!enabled) {
+      for (const deck of Object.values(this.decks)) deck.transport.cancelScheduled();
+    }
+  }
+
+  /** Next quantum boundary for a deck, or null when quantize is off / no grid. */
+  private boundaryFor(deck: DeckId): { at: number; domain: 'written' | 'readPos' } | null {
+    if (!this.quantize.enabled) return null;
+    const t = this.decks[deck].transport;
+    const status = t.status;
+    if (!status) return null;
+    // Playing decks quantize on their playhead; live or paused decks on the
+    // wall clock (a paused playhead would never cross a readPos boundary).
+    const onPlayhead = status.mode !== 'live' && status.playing;
+    const pos = onPlayhead ? status.readPos : status.written;
+    const at = t.grid.nextBoundary(pos, this.quantize.quantumBeats);
+    return at === null ? null : { at, domain: onPlayhead ? 'readPos' : 'written' };
+  }
+
   // ── Transport gestures ─────────────────────────────────────────────────
 
   brake(deck: DeckId, on: boolean): void {
-    this.guard('brake', () => this.decks[deck].transport.brake(on));
+    this.guard('brake', () => {
+      const t = this.decks[deck].transport;
+      if (!on) {
+        t.cancelScheduled('brake'); // released before the boundary → never fire
+        t.brake(false);
+        return;
+      }
+      const b = this.boundaryFor(deck);
+      if (b) t.scheduleAction(b.at, b.domain, { type: 'brake' });
+      else t.brake(true);
+    });
   }
 
   stutter(deck: DeckId, on: boolean, sliceMs: number): void {
-    this.guard('stutter', () => this.decks[deck].transport.stutter(on, sliceMs));
+    this.guard('stutter', () => {
+      const t = this.decks[deck].transport;
+      if (!on) {
+        t.cancelScheduled('stutter');
+        t.stutter(false, sliceMs);
+        return;
+      }
+      const b = this.boundaryFor(deck);
+      if (b) t.scheduleAction(b.at, b.domain, { type: 'stutter', sliceSeconds: sliceMs / 1000 });
+      else t.stutter(true, sliceMs);
+    });
   }
 
   setBrakeTime(deck: DeckId, seconds: number): void {
@@ -122,19 +169,43 @@ export class AudioEngine {
   }
 
   pauseDeck(deck: DeckId): void {
-    this.guard('pauseDeck', () => this.decks[deck].transport.pause());
+    this.guard('pauseDeck', () => {
+      const b = this.boundaryFor(deck);
+      const t = this.decks[deck].transport;
+      if (b) t.scheduleAction(b.at, b.domain, { type: 'pause' });
+      else t.pause();
+    });
   }
 
   playDeck(deck: DeckId): void {
-    this.guard('playDeck', () => this.decks[deck].transport.play());
+    this.guard('playDeck', () => {
+      const b = this.boundaryFor(deck);
+      const t = this.decks[deck].transport;
+      if (b) t.scheduleAction(b.at, b.domain, { type: 'play' });
+      else t.play();
+    });
   }
 
   setRate(deck: DeckId, rate: number): void {
     this.guard('setRate', () => this.decks[deck].transport.setRate(rate));
   }
 
+  /**
+   * Seek/beat-jump. Quantized: the target snaps to its nearest beat and the
+   * jump fires on the next quantum boundary with phase carry-over (lands in
+   * phase, Ableton-launch style). Unquantized: free seek.
+   */
   seekAbs(deck: DeckId, pos: number): void {
-    this.guard('seekAbs', () => this.decks[deck].transport.seekAbs(pos));
+    this.guard('seekAbs', () => {
+      const t = this.decks[deck].transport;
+      const b = this.boundaryFor(deck);
+      if (b) {
+        const target = t.grid.nearestBeat(pos) ?? pos;
+        t.scheduleAction(b.at, b.domain, { type: 'seekAbs', target });
+      } else {
+        t.seekAbs(pos);
+      }
+    });
   }
 
   jumpLive(deck: DeckId): void {
@@ -146,7 +217,12 @@ export class AudioEngine {
   }
 
   trackRestart(deck: DeckId): void {
-    this.guard('trackRestart', () => this.decks[deck].transport.trackRestart());
+    this.guard('trackRestart', () => {
+      const b = this.boundaryFor(deck);
+      const t = this.decks[deck].transport;
+      if (b) t.scheduleAction(b.at, b.domain, { type: 'trackRestart' });
+      else t.trackRestart();
+    });
   }
 
   trackExit(deck: DeckId): void {
@@ -222,7 +298,26 @@ export class AudioEngine {
   }
 
   setFxBypass(deck: DeckId, slot: number, bypassed: boolean): void {
-    this.guard('setFxBypass', () => this.decks[deck].fx[slot]?.setBypass(bypassed));
+    this.guard('setFxBypass', () => {
+      const atTime = this.quantizedCtxTime(deck);
+      this.decks[deck].fx[slot]?.setBypass(bypassed, atTime ?? undefined);
+    });
+  }
+
+  /** Quantized crossfader cut to one side, on the target deck's grid. */
+  cutTo(deck: DeckId): void {
+    this.guard('cutTo', () => {
+      const atTime = this.quantizedCtxTime(deck);
+      this.crossfader.cut(deck === 'A' ? 0 : 1, atTime ?? undefined);
+    });
+  }
+
+  /** AudioContext time of the deck's next audible quantum boundary (null →
+   *  act immediately: quantize off, no grid, or deck paused). */
+  private quantizedCtxTime(deck: DeckId): number | null {
+    const b = this.boundaryFor(deck);
+    if (!b) return null;
+    return this.decks[deck].transport.ctxTimeAtPlayhead(b.at);
   }
 
   async resume(): Promise<void> {

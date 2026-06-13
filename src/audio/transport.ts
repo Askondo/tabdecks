@@ -2,7 +2,7 @@
 import { BeatGrid } from './beatgrid';
 import { ONSET_HOP } from '@/dsp/onset-detect';
 import { TempoInducer } from '@/dsp/tempo-induction';
-import type { TransportStatus } from '@/dsp/transport-dsp';
+import type { ScheduleDomain, ScheduledAction, TransportStatus } from '@/dsp/transport-dsp';
 
 export const TRANSPORT_WORKLET_URL = '/transport-worklet.js';
 export const TRANSPORT_PROCESSOR = 'tabdecks-transport';
@@ -61,8 +61,11 @@ export class DeckTransport {
 
   private readonly inducer: TempoInducer;
   private statusCount = 0;
+  private statusCtxTime = 0;
+  private readonly sampleRate: number;
 
   constructor(ctx: AudioContext) {
+    this.sampleRate = ctx.sampleRate;
     this.peaks = new PeakStore(HISTORY_SECONDS * ctx.sampleRate);
     this.grid = new BeatGrid(ctx.sampleRate);
     this.inducer = new TempoInducer(ctx.sampleRate / ONSET_HOP);
@@ -75,7 +78,7 @@ export class DeckTransport {
     this.node.port.onmessage = (e: MessageEvent) => {
       const data = e.data as
         | { type: 'error'; message?: string }
-        | { type: 'status'; status: TransportStatus }
+        | { type: 'status'; status: TransportStatus; ctxTime: number }
         | {
             type: 'peaks';
             firstBucket: number;
@@ -88,6 +91,7 @@ export class DeckTransport {
         this.onError?.(data.message ?? 'unknown worklet error');
       } else if (data.type === 'status') {
         this.status = data.status;
+        this.statusCtxTime = data.ctxTime;
         if (++this.statusCount % ESTIMATE_EVERY_N_STATUS === 0) {
           const est = this.inducer.estimate();
           if (est) this.grid.updateFromDetection(est);
@@ -152,5 +156,29 @@ export class DeckTransport {
 
   trackExit(): void {
     this.post({ type: 'trackExit' });
+  }
+
+  // ── Quantize scheduling ───────────────────────────────────────────────
+
+  scheduleAction(at: number, domain: ScheduleDomain, action: ScheduledAction): void {
+    this.post({ type: 'schedule', at, domain, action });
+  }
+
+  cancelScheduled(kind?: ScheduledAction['type']): void {
+    this.post({ type: 'cancelScheduled', kind });
+  }
+
+  /**
+   * AudioContext time at which the PLAYHEAD will reach an absolute sample
+   * position (for scheduling AudioParam moves on the audible beat).
+   * Approximates with the user rate; null when unknowable (paused/no status).
+   */
+  ctxTimeAtPlayhead(targetAbs: number): number | null {
+    const s = this.status;
+    if (!s) return null;
+    const pos = s.mode === 'live' ? s.written : s.readPos;
+    const rate = s.mode === 'live' ? 1 : s.playing ? Math.max(0.05, s.rate) : 0;
+    if (rate === 0) return null;
+    return this.statusCtxTime + (targetAbs - pos) / (rate * this.sampleRate);
   }
 }

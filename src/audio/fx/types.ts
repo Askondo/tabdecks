@@ -32,8 +32,9 @@ export interface FxInstance {
   setParam(id: string, value: number): void;
   /** mix ∈ [0,1], equal-power dry/wet. */
   setWet(mix: number): void;
-  /** Click-free; the wet path keeps processing so tails survive re-enable. */
-  setBypass(bypassed: boolean): void;
+  /** Click-free; the wet path keeps processing so tails survive re-enable.
+   *  atTime: optional AudioContext time for quantized toggles. */
+  setBypass(bypassed: boolean, atTime?: number): void;
   /** Hard disconnect of internals — instance is dead afterwards. */
   dispose(): void;
 }

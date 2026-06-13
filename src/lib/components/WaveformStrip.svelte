@@ -51,6 +51,20 @@
       ctx2d.fillRect(x, (h - bar) / 2, 1, bar);
     }
 
+    // Beat-grid ticks (taller every 4th beat from the anchor)
+    const grid = bridge.grids[deck];
+    if (grid.bpm !== null && grid.anchor !== null) {
+      const period = (60 / grid.bpm) * SR;
+      const firstBeat = Math.ceil((from - grid.anchor) / period);
+      const lastBeat = Math.floor((to - grid.anchor) / period);
+      for (let b = firstBeat; b <= lastBeat; b++) {
+        const x = ((grid.anchor + b * period - from) / span) * w;
+        const isBar = ((b % 4) + 4) % 4 === 0;
+        ctx2d.fillStyle = isBar ? 'rgba(232,232,238,0.35)' : 'rgba(232,232,238,0.12)';
+        ctx2d.fillRect(x, 0, 1, isBar ? h : h * 0.5);
+      }
+    }
+
     // History boundary (older audio evicted)
     if (t.oldest > from) {
       const x = ((t.oldest - from) / span) * w;
@@ -66,9 +80,9 @@
       ctx2d.fillRect(x - 1, 0, 2, 6);
     }
 
-    // Playhead
+    // Playhead (purple while a quantized action is armed)
     const px = ((Math.min(t.readPos, to) - from) / span) * w;
-    ctx2d.fillStyle = '#e8e8ee';
+    ctx2d.fillStyle = t.pending > 0 ? '#a78bfa' : '#e8e8ee';
     ctx2d.fillRect(px - 1, 0, 2, h);
 
     // Live edge marker (right side, non-track modes)

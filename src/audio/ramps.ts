@@ -19,3 +19,17 @@ export function rampTo(
 ): void {
   param.setTargetAtTime(value, ctx.currentTime, tau);
 }
+
+/**
+ * Scheduled ramp at a future context time (quantized crossfader cuts and FX
+ * toggles land on the beat). Clamped to "now" if the boundary already passed.
+ */
+export function rampAt(
+  ctx: BaseAudioContext,
+  param: AudioParam,
+  value: number,
+  atTime: number,
+  tau: number = RAMP.fader,
+): void {
+  param.setTargetAtTime(value, Math.max(atTime, ctx.currentTime), tau);
+}

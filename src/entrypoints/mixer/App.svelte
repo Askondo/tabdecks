@@ -3,6 +3,7 @@
   import { EngineBridge } from '@/lib/stores/engine-bridge.svelte';
   import DeckPanel from '@/lib/components/DeckPanel.svelte';
   import Crossfader from '@/lib/components/Crossfader.svelte';
+  import CutButtons from '@/lib/components/CutButtons.svelte';
   import Fader from '@/lib/components/Fader.svelte';
   import Meter from '@/lib/components/Meter.svelte';
   import StatusBar from '@/lib/components/StatusBar.svelte';
@@ -121,7 +122,10 @@
 
   <svelte:boundary onerror={boundaryError}>
     <div class="mix-row">
-      <Crossfader value={bridge.crossfade} onchange={(v) => bridge.setCrossfade(v)} />
+      <div class="xfade-col">
+        <Crossfader value={bridge.crossfade} onchange={(v) => bridge.setCrossfade(v)} />
+        <CutButtons {bridge} />
+      </div>
       <div class="master">
         <Fader
           label="Master"
@@ -180,6 +184,11 @@
     grid-template-columns: 1fr auto;
     gap: 16px;
     align-items: center;
+  }
+  .xfade-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
   .master {
     width: 140px;
