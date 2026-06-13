@@ -72,6 +72,17 @@
       ctx2d.fillRect(0, 0, x, h);
     }
 
+    // Bar-loop region
+    if (t.loopStart !== null && t.loopEnd !== null && t.loopEnd > from && t.loopStart < to) {
+      const x0 = ((Math.max(t.loopStart, from) - from) / span) * w;
+      const x1 = ((Math.min(t.loopEnd, to) - from) / span) * w;
+      ctx2d.fillStyle = 'rgba(22,163,74,0.18)';
+      ctx2d.fillRect(x0, 0, x1 - x0, h);
+      ctx2d.fillStyle = '#16a34a';
+      ctx2d.fillRect(x0, 0, 1, h);
+      ctx2d.fillRect(x1 - 1, 0, 1, h);
+    }
+
     // Cues
     ctx2d.fillStyle = '#facc15';
     for (const cue of t.cues) {

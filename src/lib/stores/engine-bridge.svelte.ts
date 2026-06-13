@@ -32,6 +32,10 @@ export interface TransportUiState {
   oldest: number;
   trackStart: number | null;
   trackEnd: number | null;
+  loopStart: number | null;
+  loopEnd: number | null;
+  /** UI-selected loop length (bars); null = loop off. */
+  loopBars: number | null;
   /** Absolute cue positions (null = unset). */
   cues: Array<number | null>;
   /** Quantize-scheduled actions waiting in the worklet (armed indicator). */
@@ -53,6 +57,9 @@ function initialTransport(): TransportUiState {
     oldest: 0,
     trackStart: null,
     trackEnd: null,
+    loopStart: null,
+    loopEnd: null,
+    loopBars: null,
     cues: Array.from({ length: CUE_COUNT }, () => null),
     pending: 0,
   };
@@ -120,6 +127,9 @@ export class EngineBridge {
       t.braking = status.gesture === 'brake';
       t.stuttering = status.gesture === 'stutter';
       t.pending = status.pending;
+      t.loopStart = status.loopStart;
+      t.loopEnd = status.loopEnd;
+      if (status.loopStart === null) t.loopBars = null;
     });
   }
 
@@ -224,6 +234,14 @@ export class EngineBridge {
   cutTo(deck: DeckId): void {
     this.crossfade = deck === 'A' ? 0 : 1;
     this.engine.cutTo(deck);
+  }
+
+  /** Toggle a fixed bar loop; clicking the active length clears it. */
+  setBarLoop(deck: DeckId, bars: number | null): void {
+    const t = this.transport[deck];
+    const next = t.loopBars === bars ? null : bars;
+    t.loopBars = next;
+    this.engine.setBarLoop(deck, next);
   }
 
   tapTempo(deck: DeckId): void {

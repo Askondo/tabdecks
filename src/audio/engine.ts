@@ -304,6 +304,31 @@ export class AudioEngine {
     });
   }
 
+  /**
+   * Fixed bar loop (null clears). The region is grid-aligned by construction:
+   * it starts at the current bar's downbeat and spans `bars` × 4 beats, so
+   * engaging it never breaks phase. Requires a beat grid.
+   */
+  setBarLoop(deck: DeckId, bars: number | null): void {
+    this.guard('setBarLoop', () => {
+      const t = this.decks[deck].transport;
+      if (bars === null) {
+        t.loopClear();
+        return;
+      }
+      const status = t.status;
+      const grid = t.grid;
+      if (!status) return;
+      const pos = status.mode === 'live' ? status.written : status.readPos;
+      const beat = grid.beatIndexAt(pos);
+      if (beat === null) return; // no grid yet — loop button is a no-op
+      const barStartBeat = Math.floor(beat / 4) * 4;
+      const start = grid.sampleAtBeat(barStartBeat)!;
+      const end = grid.sampleAtBeat(barStartBeat + bars * 4)!;
+      t.loopSet(start, end);
+    });
+  }
+
   /** Quantized crossfader cut to one side, on the target deck's grid. */
   cutTo(deck: DeckId): void {
     this.guard('cutTo', () => {

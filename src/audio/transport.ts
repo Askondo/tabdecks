@@ -158,6 +158,14 @@ export class DeckTransport {
     this.post({ type: 'trackExit' });
   }
 
+  loopSet(startAbs: number, endAbs: number): void {
+    this.post({ type: 'loopSet', startAbs, endAbs });
+  }
+
+  loopClear(): void {
+    this.post({ type: 'loopClear' });
+  }
+
   // ── Quantize scheduling ───────────────────────────────────────────────
 
   scheduleAction(at: number, domain: ScheduleDomain, action: ScheduledAction): void {

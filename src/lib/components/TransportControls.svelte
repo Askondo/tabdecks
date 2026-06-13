@@ -1,5 +1,6 @@
 <script lang="ts">
   import Knob from './Knob.svelte';
+  import LoopControls from './LoopControls.svelte';
   import { STUTTER_SLICES_MS } from '@/audio/transport';
   import { CUE_COUNT } from '@/lib/stores/engine-bridge.svelte';
   import type { EngineBridge } from '@/lib/stores/engine-bridge.svelte';
@@ -73,6 +74,8 @@
       LIVE
     </button>
     <span class="behind" class:islive={t.mode === 'live'}>{fmtBehind(t.behind)}</span>
+
+    <LoopControls {bridge} {deck} />
 
     <span class="spacer"></span>
 

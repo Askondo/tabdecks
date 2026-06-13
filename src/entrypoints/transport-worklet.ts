@@ -34,7 +34,9 @@ export type TransportMessage =
   | { type: 'trackRestart' }
   | { type: 'trackExit' }
   | { type: 'schedule'; at: number; domain: ScheduleDomain; action: ScheduledAction }
-  | { type: 'cancelScheduled'; kind?: ScheduledAction['type'] };
+  | { type: 'cancelScheduled'; kind?: ScheduledAction['type'] }
+  | { type: 'loopSet'; startAbs: number; endAbs: number }
+  | { type: 'loopClear' };
 
 /** Waveform peak bucket size in samples (≈10.7 ms at 48 kHz). */
 export const PEAK_BUCKET = 512;
@@ -103,6 +105,8 @@ export default defineUnlistedScript(() => {
           case 'trackExit': this.dsp.trackExit(); break;
           case 'schedule': this.dsp.schedule(msg.at, msg.domain, msg.action); break;
           case 'cancelScheduled': this.dsp.cancelScheduled(msg.kind); break;
+          case 'loopSet': this.dsp.setLoop(msg.startAbs, msg.endAbs); break;
+          case 'loopClear': this.dsp.clearLoop(); break;
         }
       } catch (e) {
         this.fail(e);

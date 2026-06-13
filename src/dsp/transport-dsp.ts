@@ -37,6 +37,9 @@ export interface TransportStatus {
   oldest: number;
   trackStart: number | null;
   trackEnd: number | null;
+  /** Active bar-loop region (absolute samples), or nulls. */
+  loopStart: number | null;
+  loopEnd: number | null;
   /** Number of quantize-scheduled actions still waiting. */
   pending: number;
 }
@@ -89,8 +92,12 @@ export class TransportDsp {
   private trackStart: number | null = null;
   private trackEnd: number | null = null;
 
-  /** Samples remaining of the post-discontinuity fade. */
-  private fadeRemaining = 0;
+  /** Bar-loop region [barLoopStart, barLoopEnd) in absolute samples. */
+  private barLoopStart: number | null = null;
+  private barLoopEnd: number | null = null;
+
+  /** Per-sample position within the post-discontinuity fade (≥ xfadeLen = inactive). */
+  private fadePos = Number.MAX_SAFE_INTEGER;
 
   private readonly pendingActions: PendingAction[] = [];
 
@@ -123,6 +130,8 @@ export class TransportDsp {
       oldest: this.rings[0]!.oldest,
       trackStart: this.trackStart,
       trackEnd: this.trackEnd,
+      loopStart: this.barLoopStart,
+      loopEnd: this.barLoopEnd,
       pending: this.pendingActions.length,
     };
   }
@@ -213,6 +222,7 @@ export class TransportDsp {
     this.gesture = 'none';
     this.mode = 'live';
     this.playing = true;
+    this.clearLoop(); // a loop can't follow the live edge
     this.startFade();
   }
 
@@ -241,6 +251,32 @@ export class TransportDsp {
   /** Leave track mode (markers kept), back to live. */
   trackExit(): void {
     if (this.mode === 'track') this.jumpLive();
+  }
+
+  // ── Bar loops ────────────────────────────────────────────────────────────
+
+  /**
+   * Engage a loop region (grid-aligned absolute bounds computed by the main
+   * thread). Engaging from LIVE enters timeshift. The playhead is left where
+   * it is — a grid-aligned region means phase is preserved by construction;
+   * if the playhead is outside the region it snaps to the loop start.
+   */
+  setLoop(startAbs: number, endAbs: number): void {
+    if (endAbs - startAbs < this.xfadeLen * 2) return;
+    this.enterTimeshiftIfLive();
+    this.barLoopStart = startAbs;
+    this.barLoopEnd = endAbs;
+    if (this.readPos < startAbs || this.readPos >= endAbs) {
+      this.readPos = this.clampToHistory(startAbs);
+      this.startFade();
+    }
+    this.playing = true;
+  }
+
+  /** Release the loop; playback continues from the current in-loop position. */
+  clearLoop(): void {
+    this.barLoopStart = null;
+    this.barLoopEnd = null;
   }
 
   // ── Quantize scheduling ──────────────────────────────────────────────────
@@ -365,27 +401,26 @@ export class TransportDsp {
   }
 
   private startFade(): void {
-    this.fadeRemaining = this.xfadeLen;
+    this.fadePos = 0;
   }
 
-  private fadeWeight(i: number): number {
-    if (this.fadeRemaining <= 0) return 1;
-    const w = 1 - (this.fadeRemaining - i) / this.xfadeLen;
-    return w < 1 ? Math.max(0, w) : 1;
+  /** 0 → 1 over xfadeLen samples; advances one sample per call. Starting at 0
+   *  guarantees continuity with lastOut — no step at the discontinuity. */
+  private nextFadeWeight(): number {
+    if (this.fadePos >= this.xfadeLen) return 1;
+    return this.fadePos++ / this.xfadeLen;
   }
 
   private processLive(input: Float32Array[] | null, output: Float32Array[], n: number): void {
-    for (let ch = 0; ch < this.channels; ch++) {
-      const out = output[ch];
-      if (!out) continue;
-      const src = input ? (input[ch] ?? input[0] ?? this.zeroBlock) : this.zeroBlock;
-      const held = this.lastOut[ch]!;
-      for (let i = 0; i < n; i++) {
-        const w = this.fadeWeight(i);
-        out[i] = w >= 1 ? src[i]! : held * (1 - w) + src[i]! * w;
+    for (let i = 0; i < n; i++) {
+      const w = this.nextFadeWeight();
+      for (let ch = 0; ch < this.channels; ch++) {
+        const out = output[ch];
+        if (!out) continue;
+        const src = input ? (input[ch] ?? input[0] ?? this.zeroBlock) : this.zeroBlock;
+        out[i] = w >= 1 ? src[i]! : this.lastOut[ch]! * (1 - w) + src[i]! * w;
       }
     }
-    this.fadeRemaining = Math.max(0, this.fadeRemaining - n);
   }
 
   /** Timeshift/track playback: smoothed varispeed, live-edge / track-end clamps. */
@@ -398,6 +433,17 @@ export class TransportDsp {
       this.currentRate += (target - this.currentRate) * this.rateSmoothing;
       this.readPos += this.currentRate;
 
+      // Bar loop: wrap at the region end (region length is grid-exact, so
+      // musical phase is preserved across the wrap).
+      if (
+        this.barLoopEnd !== null &&
+        this.barLoopStart !== null &&
+        this.readPos >= this.barLoopEnd
+      ) {
+        this.readPos -= this.barLoopEnd - this.barLoopStart;
+        this.startFade();
+      }
+
       // Can't read the future: pin to the live edge (writes advance 1/sample,
       // so a pinned playhead effectively rides at 1×).
       const edge = liveEdge() + i;
@@ -409,16 +455,17 @@ export class TransportDsp {
         this.playing = false;
       }
 
-      const gain = Math.min(1, Math.abs(this.currentRate) * 8) * this.fadeWeight(i);
+      // Rate gain handles the pause sample-hold; the discontinuity fade is
+      // applied ONLY in the blend (applying it to v too would sag the output).
+      const gain = Math.min(1, Math.abs(this.currentRate) * 8);
+      const w = this.nextFadeWeight();
       for (let ch = 0; ch < this.channels; ch++) {
         const out = output[ch];
         if (!out) continue;
         const v = this.rings[ch]!.readAt(this.readPos) * gain;
-        const w = this.fadeWeight(i);
         out[i] = w >= 1 ? v : this.lastOut[ch]! * (1 - w) + v * w;
       }
     }
-    this.fadeRemaining = Math.max(0, this.fadeRemaining - n);
   }
 
   private processBrake(output: Float32Array[], n: number): void {
