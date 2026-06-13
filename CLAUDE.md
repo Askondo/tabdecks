@@ -17,14 +17,19 @@ src/audio/
   deck.ts                     Per-deck chain: source → transport → trim → EQ → FX → fader
   transport.ts                Main-thread side of the transport worklet
   eq.ts / crossfader.ts / master.ts / meters.ts
-  ramps.ts                    setTargetAtTime helpers — ALL audible param changes
+  ramps.ts                    setTargetAtTime helpers (+ rampAt for quantized scheduling)
+  beatgrid.ts                 Per-deck beat grid (detect/tap/override/nudge, grid math)
+  sync.ts                     PLL deck-to-deck tempo+phase sync; MasterClock abstraction
+  link-client.ts              Ableton Link via the native-messaging bridge; MasterClock
   fx/                         FX plugin framework (types, registry, wrapper, echo, …)
 src/dsp/                      PURE TS, no Web Audio types — unit-testable DSP
+                              (transport, onset-detect, tempo-induction, pll, clock-offset, …)
 src/messaging/                Typed runtime message protocol + router
 src/lib/components/           Svelte UI components
 src/lib/stores/               Svelte 5 runes bridges to engine events
 src/settings/storage.ts       chrome.storage.local — settings only, versioned schema
 tools/launch_chrome.ts        Dev launcher (config: tools/dev.local.cfg, gitignored)
+tools/link-bridge/            Ableton Link native-messaging host: bridge.mjs + install/uninstall
 tools/testpage/tone.html      Test tone + click track for latency measurement
 docs/architecture.md          Authoritative context/flow diagrams — keep current
 docs/api/                     Local API references (see below)
@@ -44,6 +49,8 @@ npm run chrome       # launch Chrome with built extension + test-tone pages
 npm run check        # svelte-check + TypeScript
 npm run test         # vitest (unit + dsp)
 npm run zip          # package for distribution
+npm run link:install # install the Ableton Link bridge (Carabiner + native-messaging host)
+npm run link:uninstall
 ```
 
 Machine paths in `tools/dev.local.cfg` (gitignored — copy from `.example`).
@@ -55,6 +62,8 @@ Machine paths in `tools/dev.local.cfg` (gitignored — copy from `.example`).
 - `docs/api/tabcapture.md` — verified chrome.tabCapture behavior (streamId lifetime, muting, activeTab grants)
 - `docs/api/webaudio_notes.md` — node quirks, AudioWorklet contract, param-ramp rules
 - `docs/api/messaging.md` — runtime message protocol (mirror of `src/messaging/protocol.ts`)
+- `docs/api/beatsync.md` — beat grid, BeatClock/PLL, quantize boundaries, loops, "no warping the live edge"
+- `docs/api/link_carabiner.md` — Ableton Link via Carabiner: TCP protocol, native-messaging channel, install
 
 ## Key Rules
 
@@ -64,7 +73,8 @@ Machine paths in `tools/dev.local.cfg` (gitignored — copy from `.example`).
 - **All audible param changes go through `ramps.ts`** — raw `.value` writes cause zipper noise/clicks.
 - **Worklet `process()` must never throw and always return `true`** — wrap the body in try/catch, latch to passthrough on error.
 - **`src/dsp/` stays pure TS** — no Web Audio / DOM / chrome types, so vitest can run it in node.
-- **Permissions stay `tabCapture, activeTab, storage`** — never add `tabs`, `scripting`, `offscreen`, or host_permissions.
+- **Permissions stay `tabCapture, activeTab, storage, nativeMessaging`** — never add `tabs`, `scripting`, `offscreen`, or host_permissions. (`nativeMessaging` was added in T4 solely for the Ableton Link bridge — Link is UDP multicast and cannot run in-page; the host's `allowed_origins` is pinned to our fixed extension ID.)
+- **`src/dsp/` is pure TS, but the Link bridge is plain `.mjs`** — `tools/link-bridge/*.mjs` runs in standalone Node (native-messaging host), so its testable logic lives in `protocol.mjs` (+ `.d.mts`) and is imported directly by vitest; never import it from extension code.
 - **UI errors must never reach the graph** — engine methods are guarded; panels sit inside `<svelte:boundary>`.
 - Svelte 5 runes (`$state`/`$derived`/`$effect`) — no legacy stores in new code.
 

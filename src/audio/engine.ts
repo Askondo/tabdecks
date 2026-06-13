@@ -4,6 +4,7 @@ import { Deck } from './deck';
 import { MasterBus } from './master';
 import { DeckTransport, TRANSPORT_WORKLET_URL } from './transport';
 import { SyncEngine, type SyncStatus } from './sync';
+import { LinkClient, type LinkState } from './link-client';
 import { getFxDescriptor } from './fx/registry';
 import type { BeatGridState } from './beatgrid';
 import type { EqBand } from './eq';
@@ -23,6 +24,8 @@ export interface EngineEvents {
   gridChanged: { deck: DeckId; grid: BeatGridState };
   /** Sync engagement / master / phase-error changed. */
   syncChanged: { status: SyncStatus };
+  /** Ableton Link bridge / session state changed. */
+  linkChanged: { state: LinkState };
 }
 
 type EventName = keyof EngineEvents;
@@ -40,6 +43,7 @@ export class AudioEngine {
   decks!: Record<DeckId, Deck>;
   crossfader!: Crossfader;
   sync!: SyncEngine;
+  link!: LinkClient;
 
   private listeners = new Map<EventName, Set<Listener<EventName>>>();
 
@@ -74,6 +78,13 @@ export class AudioEngine {
         if (deck.id === 'A') {
           this.sync.update();
           this.emit('syncChanged', { status: this.sync.status });
+          // Bidirectional tempo: when TabDecks leads (a deck is master) and
+          // Link is connected, push the master deck's BPM into the session.
+          const master = this.sync.status.master;
+          if (master !== 'link' && this.link.connected) {
+            const g = this.decks[master].transport.grid.state;
+            if (g.bpm !== null) this.link.setTempo(g.bpm);
+          }
         }
       };
       deck.transport.grid.onChange = () =>
@@ -89,6 +100,13 @@ export class AudioEngine {
       B: this.decks.B.transport,
     });
     this.sync.onChange = () => this.emit('syncChanged', { status: this.sync.status });
+
+    this.link = new LinkClient(this.ctx);
+    this.link.onChange = (state) => {
+      // Feed Link's master clock into sync while it's the selected master.
+      this.sync.setExternalClock(this.link.connected ? this.link.masterClock() : null);
+      this.emit('linkChanged', { state });
+    };
   }
 
   // ── Capture ────────────────────────────────────────────────────────────
@@ -286,7 +304,25 @@ export class AudioEngine {
   }
 
   setSyncMaster(master: DeckId | 'link'): void {
-    this.guard('setSyncMaster', () => this.sync.setMaster(master));
+    this.guard('setSyncMaster', () => {
+      this.sync.setMaster(master);
+      if (master === 'link') {
+        this.sync.setExternalClock(this.link.connected ? this.link.masterClock() : null);
+      }
+    });
+  }
+
+  // ── Ableton Link ─────────────────────────────────────────────────────────
+
+  enableLink(): void {
+    this.guard('enableLink', () => this.link.enable());
+  }
+
+  disableLink(): void {
+    this.guard('disableLink', () => {
+      this.link.disable();
+      if (this.sync.status.master === 'link') this.sync.setMaster('A');
+    });
   }
 
   /** One-shot phase alignment (no continuous lock). */

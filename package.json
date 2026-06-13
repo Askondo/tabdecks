@@ -12,6 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "chrome": "tsx tools/launch_chrome.ts",
+    "link:install": "node tools/link-bridge/install.mjs",
+    "link:uninstall": "node tools/link-bridge/uninstall.mjs",
     "postinstall": "wxt prepare"
   },
   "devDependencies": {

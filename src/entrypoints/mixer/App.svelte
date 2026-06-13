@@ -4,6 +4,7 @@
   import DeckPanel from '@/lib/components/DeckPanel.svelte';
   import Crossfader from '@/lib/components/Crossfader.svelte';
   import CutButtons from '@/lib/components/CutButtons.svelte';
+  import LinkPanel from '@/lib/components/LinkPanel.svelte';
   import Fader from '@/lib/components/Fader.svelte';
   import Meter from '@/lib/components/Meter.svelte';
   import StatusBar from '@/lib/components/StatusBar.svelte';
@@ -104,6 +105,10 @@
 <main>
   <header>
     <h1>TabDecks</h1>
+    <svelte:boundary onerror={boundaryError}>
+      <LinkPanel {bridge} />
+      {#snippet failed()}<span class="panel-error">Link panel error</span>{/snippet}
+    </svelte:boundary>
   </header>
 
   <div class="decks">
@@ -167,6 +172,12 @@
     gap: 16px;
     min-height: calc(100vh - 32px);
     box-sizing: border-box;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
   }
   header h1 {
     margin: 0;
