@@ -1,4 +1,5 @@
 import { defineUnlistedScript } from '#imports';
+import { OnsetDetector } from '@/dsp/onset-detect';
 import { TransportDsp } from '@/dsp/transport-dsp';
 
 // Runs in AudioWorkletGlobalScope — no window/chrome/DOM. These globals are
@@ -63,11 +64,21 @@ export default defineUnlistedScript(() => {
     private pendingFirstBucket = -1;
     private samplesSinceStatus = 0;
 
+    // Onset envelope over the same 512-sample buckets (beat detection).
+    // Independently indexed: peaks may flush mid-block before the detector
+    // has seen the block, so onsets carry their own first-frame index.
+    private onsetDetector!: OnsetDetector;
+    private monoScratch = new Float32Array(0);
+    private pendingOnsets: number[] = [];
+    private pendingFirstOnset = -1;
+    private onsetFramesSeen = 0;
+
     constructor(options?: unknown) {
       super(options);
       const historySeconds =
         (options as ProcessorOptions)?.processorOptions?.historySeconds ?? 300;
       this.dsp = new TransportDsp(sampleRate, historySeconds, 2);
+      this.onsetDetector = new OnsetDetector(sampleRate);
       this.port.onmessage = (e: MessageEvent) => this.handle(e.data as TransportMessage);
     }
 
@@ -123,8 +134,10 @@ export default defineUnlistedScript(() => {
     private accumulatePeaks(input: Float32Array[] | null, n: number): void {
       const l = input?.[0];
       const r = input?.[1] ?? l;
+      if (this.monoScratch.length !== n) this.monoScratch = new Float32Array(n);
       for (let i = 0; i < n; i++) {
         const v = l ? Math.max(Math.abs(l[i]!), Math.abs(r![i]!)) : 0;
+        this.monoScratch[i] = l ? (l[i]! + r![i]!) * 0.5 : 0;
         if (v > this.peakAcc) this.peakAcc = v;
         this.bucketFill++;
         this.absPos++;
@@ -137,6 +150,15 @@ export default defineUnlistedScript(() => {
           if (this.pendingPeaks.length >= PEAKS_PER_POST) this.flushPeaks();
         }
       }
+      // Same 512-sample hop as peak buckets: onset frame N covers the same
+      // absolute samples as peak bucket N.
+      this.onsetDetector.process(this.monoScratch, n);
+      const frames = this.onsetDetector.drainFrames();
+      if (frames.length) {
+        if (this.pendingFirstOnset < 0) this.pendingFirstOnset = this.onsetFramesSeen;
+        this.onsetFramesSeen += frames.length;
+        for (const f of frames) this.pendingOnsets.push(f);
+      }
     }
 
     private flushPeaks(): void {
@@ -145,9 +167,13 @@ export default defineUnlistedScript(() => {
         type: 'peaks',
         firstBucket: this.pendingFirstBucket,
         values: Float32Array.from(this.pendingPeaks),
+        onsetsFirstFrame: this.pendingFirstOnset,
+        onsets: Float32Array.from(this.pendingOnsets),
       });
       this.pendingPeaks = [];
       this.pendingFirstBucket = -1;
+      this.pendingOnsets = [];
+      this.pendingFirstOnset = -1;
     }
 
     private maybePostStatus(n: number): void {

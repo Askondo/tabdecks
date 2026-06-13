@@ -1,5 +1,6 @@
 import { getFxDescriptor } from '@/audio/fx/registry';
 import type { AudioEngine } from '@/audio/engine';
+import type { BeatGridState } from '@/audio/beatgrid';
 import type { DeckPublicState } from '@/audio/deck';
 import type { EqBand } from '@/audio/eq';
 import type { TransportMode } from '@/dsp/transport-dsp';
@@ -80,6 +81,10 @@ export class EngineBridge {
     A: initialTransport(),
     B: initialTransport(),
   });
+  grids = $state<Record<DeckId, BeatGridState>>({
+    A: { bpm: null, anchor: null, confidence: 0, source: 'auto' },
+    B: { bpm: null, anchor: null, confidence: 0, source: 'auto' },
+  });
   crossfade = $state(0.5);
   master = $state(1);
   needsResume = $state(false);
@@ -95,6 +100,9 @@ export class EngineBridge {
     });
     engine.on('engineError', ({ context, error }) => {
       this.lastError = `${context}: ${String(error)}`;
+    });
+    engine.on('gridChanged', ({ deck, grid }) => {
+      this.grids[deck] = grid;
     });
     engine.on('transportStatus', ({ deck, status }) => {
       const t = this.transport[deck];
@@ -199,6 +207,22 @@ export class EngineBridge {
 
   peakBetween(deck: DeckId, fromAbs: number, toAbs: number): number {
     return this.engine.peakBetween(deck, fromAbs, toAbs);
+  }
+
+  tapTempo(deck: DeckId): void {
+    this.engine.tapTempo(deck);
+  }
+
+  setManualBpm(deck: DeckId, bpm: number): void {
+    this.engine.setManualBpm(deck, bpm);
+  }
+
+  clearManualBpm(deck: DeckId): void {
+    this.engine.clearManualBpm(deck);
+  }
+
+  nudgeGrid(deck: DeckId, ms: number): void {
+    this.engine.nudgeGrid(deck, ms);
   }
 
   async loadFx(deck: DeckId, slot: number, fxId: string): Promise<void> {

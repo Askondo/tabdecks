@@ -1,4 +1,7 @@
 // Main-thread control surface for the transport worklet.
+import { BeatGrid } from './beatgrid';
+import { ONSET_HOP } from '@/dsp/onset-detect';
+import { TempoInducer } from '@/dsp/tempo-induction';
 import type { TransportStatus } from '@/dsp/transport-dsp';
 
 export const TRANSPORT_WORKLET_URL = '/transport-worklet.js';
@@ -42,9 +45,13 @@ export class PeakStore {
   }
 }
 
+/** Run tempo estimation roughly once per second (every Nth status message). */
+const ESTIMATE_EVERY_N_STATUS = 20;
+
 export class DeckTransport {
   readonly node: AudioWorkletNode;
   readonly peaks: PeakStore;
+  readonly grid: BeatGrid;
   /** Latest status snapshot from the worklet (~20 Hz). */
   status: TransportStatus | null = null;
 
@@ -52,8 +59,13 @@ export class DeckTransport {
   /** Worklet latched to passthrough after an internal error. */
   onError: ((message: string) => void) | null = null;
 
+  private readonly inducer: TempoInducer;
+  private statusCount = 0;
+
   constructor(ctx: AudioContext) {
     this.peaks = new PeakStore(HISTORY_SECONDS * ctx.sampleRate);
+    this.grid = new BeatGrid(ctx.sampleRate);
+    this.inducer = new TempoInducer(ctx.sampleRate / ONSET_HOP);
     this.node = new AudioWorkletNode(ctx, TRANSPORT_PROCESSOR, {
       numberOfInputs: 1,
       numberOfOutputs: 1,
@@ -64,15 +76,26 @@ export class DeckTransport {
       const data = e.data as
         | { type: 'error'; message?: string }
         | { type: 'status'; status: TransportStatus }
-        | { type: 'peaks'; firstBucket: number; values: Float32Array };
+        | {
+            type: 'peaks';
+            firstBucket: number;
+            values: Float32Array;
+            onsetsFirstFrame: number;
+            onsets: Float32Array;
+          };
       if (data.type === 'error') {
         console.error('[transport] worklet latched to passthrough:', data.message);
         this.onError?.(data.message ?? 'unknown worklet error');
       } else if (data.type === 'status') {
         this.status = data.status;
+        if (++this.statusCount % ESTIMATE_EVERY_N_STATUS === 0) {
+          const est = this.inducer.estimate();
+          if (est) this.grid.updateFromDetection(est);
+        }
         this.onStatus?.(data.status);
       } else if (data.type === 'peaks') {
         this.peaks.set(data.firstBucket, data.values);
+        if (data.onsets.length) this.inducer.addFrames(data.onsets, data.onsetsFirstFrame);
       }
     };
   }

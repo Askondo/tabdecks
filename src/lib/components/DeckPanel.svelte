@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BpmDisplay from './BpmDisplay.svelte';
   import EqSection from './EqSection.svelte';
   import Fader from './Fader.svelte';
   import FxSlot from './FxSlot.svelte';
@@ -22,7 +23,10 @@
 
 <section class="deck" class:live={state.status === 'live'} data-deck={deck}>
   <header>
-    <h2>Deck {deck}</h2>
+    <div class="head-row">
+      <h2>Deck {deck}</h2>
+      <BpmDisplay {bridge} {deck} />
+    </div>
     <p class="status {state.status}" title={state.error ?? state.title}>
       {#if state.status === 'empty'}
         No tab assigned
@@ -87,6 +91,12 @@
     margin: 0 0 6px;
     font-size: 14px;
     color: #c9cde0;
+  }
+  .head-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
   }
   .status {
     margin: 0;

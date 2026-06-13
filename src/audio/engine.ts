@@ -4,6 +4,7 @@ import { Deck } from './deck';
 import { MasterBus } from './master';
 import { DeckTransport, TRANSPORT_WORKLET_URL } from './transport';
 import { getFxDescriptor } from './fx/registry';
+import type { BeatGridState } from './beatgrid';
 import type { EqBand } from './eq';
 import type { TransportStatus } from '@/dsp/transport-dsp';
 import type { DeckId } from '@/messaging/protocol';
@@ -17,6 +18,8 @@ export interface EngineEvents {
   contextState: { state: AudioContextState };
   /** ~20 Hz transport snapshot from a deck's worklet. */
   transportStatus: { deck: DeckId; status: TransportStatus };
+  /** Deck beat grid changed (detection update, tap, override, nudge). */
+  gridChanged: { deck: DeckId; grid: BeatGridState };
 }
 
 type EventName = keyof EngineEvents;
@@ -62,6 +65,8 @@ export class AudioEngine {
         });
       deck.transport.onStatus = (status) =>
         this.emit('transportStatus', { deck: deck.id, status });
+      deck.transport.grid.onChange = () =>
+        this.emit('gridChanged', { deck: deck.id, grid: deck.transport.grid.state });
     }
     this.crossfader = new Crossfader(
       this.ctx,
@@ -151,6 +156,27 @@ export class AudioEngine {
   /** Waveform peak lookup for the UI (absolute sample range). */
   peakBetween(deck: DeckId, fromAbs: number, toAbs: number): number {
     return this.decks[deck].transport.peaks.peakBetween(fromAbs, toAbs);
+  }
+
+  // ── Beat grid ──────────────────────────────────────────────────────────
+
+  tapTempo(deck: DeckId): void {
+    this.guard('tapTempo', () => {
+      const t = this.decks[deck].transport;
+      t.grid.tap(t.status?.written ?? 0);
+    });
+  }
+
+  setManualBpm(deck: DeckId, bpm: number): void {
+    this.guard('setManualBpm', () => this.decks[deck].transport.grid.setManualBpm(bpm));
+  }
+
+  clearManualBpm(deck: DeckId): void {
+    this.guard('clearManualBpm', () => this.decks[deck].transport.grid.clearManual());
+  }
+
+  nudgeGrid(deck: DeckId, ms: number): void {
+    this.guard('nudgeGrid', () => this.decks[deck].transport.grid.nudge(ms));
   }
 
   setCrossfade(x: number): void {
