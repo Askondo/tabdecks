@@ -28,7 +28,17 @@
       <h2>Deck {deck}</h2>
       <BpmDisplay {bridge} {deck} />
     </div>
-    <SyncControls {bridge} {deck} />
+    <div class="sync-row">
+      <SyncControls {bridge} {deck} />
+      <button
+        class="pfl"
+        class:on={bridge.routing.pfl[deck]}
+        onclick={() => bridge.setPfl(deck, !bridge.routing.pfl[deck])}
+        title="Pre-fade listen (headphone cue)"
+      >
+        🎧
+      </button>
+    </div>
     <p class="status {state.status}" title={state.error ?? state.title}>
       {#if state.status === 'empty'}
         No tab assigned
@@ -99,6 +109,25 @@
     justify-content: space-between;
     align-items: baseline;
     gap: 10px;
+  }
+  .sync-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .pfl {
+    padding: 3px 7px;
+    border-radius: 4px;
+    border: 1px solid #343442;
+    background: transparent;
+    cursor: pointer;
+    filter: grayscale(1) opacity(0.6);
+  }
+  .pfl.on {
+    background: #0891b2;
+    border-color: #0891b2;
+    filter: none;
   }
   .status {
     margin: 0;

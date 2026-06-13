@@ -38,6 +38,16 @@ Opens Chrome (dedicated profile) with the extension loaded and two test-tone pag
 - [ ] 30-min soak: both decks live, FX active, stutter held intermittently; watch Chrome's
       Task Manager for CPU/memory creep.
 
+## 3b. Tempo / sync / Link / routing (v2)
+
+- [ ] BPM detect on a 4/4 techno YouTube tab → within ±0.5 of the track's known BPM; beat LED on the downbeat.
+- [ ] Quantize ON, 1-beat: hold STUTTER off-grid → it engages on the next beat; waveform playhead turns purple while armed.
+- [ ] Waveform click with quantize ON → jumps in phase on the next boundary.
+- [ ] LOOP 4 → 4-bar region wraps seamlessly, stays on grid; clear → continues in place.
+- [ ] SYNC deck B to A → audible beatmatch lock; SYNC button glows "locked"; PHASE one-shot snaps alignment.
+- [ ] Ableton Link: `npm run link:install`, reload extension, enable LINK → peers/BPM show; open Ableton Live (or LinkHut) on the same machine → tempo follows both directions; "USE AS MASTER" slaves both decks to Live's grid; quantized launch lands on Live's bar.
+- [ ] Routing: OUT → speakers, CUE → headphones; PFL (🎧) deck B → B audible only in headphones (pre-fader, independent of crossfader).
+
 ## 4. Musical QA (real content)
 
 - [ ] YouTube tab captures and plays (confirmed working).

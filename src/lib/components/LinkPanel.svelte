@@ -44,6 +44,17 @@
       {/if}
     {/if}
   {/if}
+
+  <span class="sep"></span>
+
+  <div class="routing">
+    <button class="route" onclick={() => bridge.pickMasterDevice()} title="Choose master output device">
+      OUT: {bridge.routing.masterDeviceLabel}
+    </button>
+    <button class="route" onclick={() => bridge.pickCueDevice()} title="Choose headphone cue device">
+      CUE: {bridge.routing.cueDeviceLabel}
+    </button>
+  </div>
 </div>
 
 <style>
@@ -104,6 +115,32 @@
     font-weight: 700;
   }
   .hint code {
+    color: #c9cde0;
+  }
+  .sep {
+    width: 1px;
+    height: 20px;
+    background: #2a2a36;
+  }
+  .routing {
+    display: flex;
+    gap: 6px;
+  }
+  .route {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 5px 9px;
+    border-radius: 5px;
+    border: 1px solid #343442;
+    background: transparent;
+    color: #9aa0b4;
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .route:hover {
+    border-color: #4f7cff;
     color: #c9cde0;
   }
 </style>

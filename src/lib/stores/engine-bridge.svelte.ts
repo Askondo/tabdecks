@@ -1,6 +1,7 @@
 import { getFxDescriptor } from '@/audio/fx/registry';
 import type { AudioEngine } from '@/audio/engine';
 import type { LinkState } from '@/audio/link-client';
+import type { RoutingState } from '@/audio/routing';
 import type { BeatGridState } from '@/audio/beatgrid';
 import type { DeckPublicState } from '@/audio/deck';
 import type { EqBand } from '@/audio/eq';
@@ -124,6 +125,9 @@ export class EngineBridge {
     });
     engine.on('linkChanged', ({ state }) => {
       this.link = { ...state };
+    });
+    engine.on('routingChanged', ({ state }) => {
+      this.routing = { ...state, pfl: { ...state.pfl } };
     });
     engine.on('transportStatus', ({ deck, status }) => {
       const t = this.transport[deck];
@@ -269,6 +273,25 @@ export class EngineBridge {
   toggleLink(): void {
     if (this.link.enabled) this.engine.disableLink();
     else this.engine.enableLink();
+  }
+
+  routing = $state<RoutingState>({
+    masterDeviceLabel: 'Default',
+    cueDeviceLabel: 'None',
+    pfl: { A: false, B: false },
+  });
+
+  setPfl(deck: DeckId, on: boolean): void {
+    this.routing.pfl[deck] = on;
+    this.engine.setPfl(deck, on);
+  }
+
+  pickMasterDevice(): void {
+    void this.engine.pickMasterDevice();
+  }
+
+  pickCueDevice(): void {
+    void this.engine.pickCueDevice();
   }
 
   quantize = $state({ enabled: false, quantum: 1 });

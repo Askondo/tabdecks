@@ -5,6 +5,7 @@ import { MasterBus } from './master';
 import { DeckTransport, TRANSPORT_WORKLET_URL } from './transport';
 import { SyncEngine, type SyncStatus } from './sync';
 import { LinkClient, type LinkState } from './link-client';
+import { Routing, type RoutingState } from './routing';
 import { getFxDescriptor } from './fx/registry';
 import type { BeatGridState } from './beatgrid';
 import type { EqBand } from './eq';
@@ -26,6 +27,8 @@ export interface EngineEvents {
   syncChanged: { status: SyncStatus };
   /** Ableton Link bridge / session state changed. */
   linkChanged: { state: LinkState };
+  /** Output routing / PFL state changed. */
+  routingChanged: { state: RoutingState };
 }
 
 type EventName = keyof EngineEvents;
@@ -44,6 +47,7 @@ export class AudioEngine {
   crossfader!: Crossfader;
   sync!: SyncEngine;
   link!: LinkClient;
+  routing!: Routing;
 
   private listeners = new Map<EventName, Set<Listener<EventName>>>();
 
@@ -107,6 +111,9 @@ export class AudioEngine {
       this.sync.setExternalClock(this.link.connected ? this.link.masterClock() : null);
       this.emit('linkChanged', { state });
     };
+
+    this.routing = new Routing(this.ctx, this.decks);
+    this.routing.onChange = (state) => this.emit('routingChanged', { state });
   }
 
   // ── Capture ────────────────────────────────────────────────────────────
@@ -323,6 +330,20 @@ export class AudioEngine {
       this.link.disable();
       if (this.sync.status.master === 'link') this.sync.setMaster('A');
     });
+  }
+
+  // ── Routing ──────────────────────────────────────────────────────────────
+
+  setPfl(deck: DeckId, on: boolean): void {
+    this.guard('setPfl', () => this.routing.setPfl(deck, on));
+  }
+
+  async pickMasterDevice(): Promise<void> {
+    await this.routing.pickMasterDevice();
+  }
+
+  async pickCueDevice(): Promise<void> {
+    await this.routing.pickCueDevice();
   }
 
   /** One-shot phase alignment (no continuous lock). */

@@ -44,6 +44,19 @@ changes go through `src/audio/ramps.ts`:
 - The worklet script runs in `AudioWorkletGlobalScope`: no `window`, no `chrome`, no DOM.
   Keep DSP logic in `src/dsp/` (pure TS) and import it into the worklet entrypoint.
 
+## Output routing (`src/audio/routing.ts`)
+
+- `AudioContext.setSinkId(deviceId)` redirects the master to a chosen device
+  (Chrome 110+; not in all TS lib versions — cast). `''` = default device.
+- `navigator.mediaDevices.selectAudioOutput()` shows a native device picker and
+  returns one `MediaDeviceInfo` WITHOUT mic permission or `enumerateDevices`
+  label-gating — preferred over enumerate. Requires a user gesture. Fall back to
+  `enumerateDevices().filter(kind==='audiooutput')` when unavailable.
+- **Headphone cue** = single-context dual output: pre-fader taps →
+  `MediaStreamAudioDestinationNode` → hidden `<audio>` with `srcObject = dest.stream`
+  and its own `setSinkId(headphoneId)`. The element path adds its own output
+  latency (tens of ms) — fine for pre-listening, not for re-mixing into master.
+
 ## OfflineAudioContext testing
 
 AudioWorklets run inside `OfflineAudioContext` — render tests (vitest browser mode) can
