@@ -166,6 +166,10 @@ export class DeckTransport {
     this.post({ type: 'loopClear' });
   }
 
+  setKeylock(on: boolean): void {
+    this.post({ type: 'keylock', on });
+  }
+
   // ── Quantize scheduling ───────────────────────────────────────────────
 
   scheduleAction(at: number, domain: ScheduleDomain, action: ScheduledAction): void {

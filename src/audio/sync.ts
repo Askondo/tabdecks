@@ -39,8 +39,13 @@ export class SyncEngine {
   constructor(
     private readonly sampleRate: number,
     private readonly transports: Record<DeckId, DeckTransport>,
-    private readonly cfg: PllConfig = DEFAULT_PLL,
+    private cfg: PllConfig = { ...DEFAULT_PLL },
   ) {}
+
+  /** Max varispeed deviation from 1.0 the PLL may apply (0.02–0.5). */
+  setMaxDev(maxDev: number): void {
+    this.cfg = { ...this.cfg, maxDev: Math.min(0.5, Math.max(0.02, maxDev)) };
+  }
 
   get status(): SyncStatus {
     return {

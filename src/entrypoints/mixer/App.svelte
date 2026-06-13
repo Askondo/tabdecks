@@ -5,11 +5,12 @@
   import Crossfader from '@/lib/components/Crossfader.svelte';
   import CutButtons from '@/lib/components/CutButtons.svelte';
   import LinkPanel from '@/lib/components/LinkPanel.svelte';
+  import SettingsPane from '@/lib/components/SettingsPane.svelte';
   import Fader from '@/lib/components/Fader.svelte';
   import Meter from '@/lib/components/Meter.svelte';
   import StatusBar from '@/lib/components/StatusBar.svelte';
   import { onMessage } from '@/messaging/router';
-  import { loadSettings, saveSettings, type SettingsV1 } from '@/settings/storage';
+  import { loadSettings, saveSettings, type SettingsV2 } from '@/settings/storage';
   import type { EqBand } from '@/audio/eq';
   import type { DeckId, Message } from '@/messaging/protocol';
 
@@ -38,24 +39,37 @@
 
   // ── Settings persistence ────────────────────────────────────────────────
   let settingsLoaded = $state(false);
+  let showSettings = $state(false);
   void loadSettings().then((s) => {
     bridge.setMaster(s.master);
     for (const deck of ['A', 'B'] as const) {
       bridge.setTrim(deck, s.decks[deck].trim);
       bridge.setBrakeTime(deck, s.decks[deck].brakeTime);
       bridge.setStutterSlice(deck, s.decks[deck].sliceMs);
+      bridge.setKeylock(deck, s.decks[deck].keylock);
     }
+    bridge.setQuantize(s.quantize.enabled, s.quantize.quantumBeats);
+    for (const a of ['gestures', 'transport', 'fx', 'cuts'] as const) {
+      bridge.setQuantizeAction(a, s.quantize.actions[a]);
+    }
+    bridge.setSyncMaxDev(s.sync.maxDev);
+    bridge.setLinkAutoconnect(s.link.autoconnect);
+    if (s.link.autoconnect) bridge.toggleLink();
     settingsLoaded = true;
   });
 
   $effect(() => {
-    const snapshot: SettingsV1 = {
-      v: 1,
+    const snapshot: SettingsV2 = {
+      v: 2,
       master: bridge.master,
-      decks: {
-        A: deckSettings('A'),
-        B: deckSettings('B'),
+      decks: { A: deckSettings('A'), B: deckSettings('B') },
+      quantize: {
+        enabled: bridge.quantize.enabled,
+        quantumBeats: bridge.quantize.quantum,
+        actions: { ...bridge.config.quantizeActions },
       },
+      sync: { maxDev: bridge.config.syncMaxDev },
+      link: { autoconnect: bridge.config.linkAutoconnect },
     };
     if (settingsLoaded) saveSettings(snapshot);
   });
@@ -65,6 +79,7 @@
       trim: bridge.trims[deck],
       brakeTime: bridge.transport[deck].brakeTime,
       sliceMs: bridge.transport[deck].sliceMs,
+      keylock: bridge.config.keylock[deck],
     };
   }
 
@@ -109,6 +124,7 @@
       <LinkPanel {bridge} />
       {#snippet failed()}<span class="panel-error">Link panel error</span>{/snippet}
     </svelte:boundary>
+    <button class="gear" onclick={() => (showSettings = true)} title="Settings" aria-label="Settings">⚙</button>
   </header>
 
   <div class="decks">
@@ -152,6 +168,15 @@
 
   <StatusBar {bridge} />
 
+  {#if showSettings}
+    <svelte:boundary onerror={boundaryError}>
+      <SettingsPane {bridge} onclose={() => (showSettings = false)} />
+      {#snippet failed(_e, reset)}
+        <div class="panel-error">Settings error <button onclick={reset}>↻</button></div>
+      {/snippet}
+    </svelte:boundary>
+  {/if}
+
   {#if bridge.needsResume}
     <button class="resume-overlay" onclick={() => bridge.resume()}>Click to start audio</button>
   {/if}
@@ -184,6 +209,19 @@
     font-size: 18px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
+  }
+  .gear {
+    background: none;
+    border: 1px solid #343442;
+    border-radius: 6px;
+    color: #9aa0b4;
+    font-size: 16px;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .gear:hover {
+    color: #e8e8ee;
+    border-color: #4f7cff;
   }
   .decks {
     display: grid;

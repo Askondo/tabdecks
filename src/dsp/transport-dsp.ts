@@ -279,6 +279,13 @@ export class TransportDsp {
     this.barLoopEnd = null;
   }
 
+  /** Key-lock (tempo without pitch). The WSOLA path lands in T7; this stores
+   *  the flag so the control surface is complete and forward-compatible. */
+  protected keylock = false;
+  setKeylock(on: boolean): void {
+    this.keylock = on;
+  }
+
   // ── Quantize scheduling ──────────────────────────────────────────────────
 
   /**

@@ -302,6 +302,33 @@ export class EngineBridge {
     this.engine.setQuantize(enabled, quantum);
   }
 
+  /** Config-pane state (persisted via settings v2). */
+  config = $state({
+    quantizeActions: { gestures: true, transport: true, fx: true, cuts: true },
+    syncMaxDev: 0.08,
+    keylock: { A: false, B: false } as Record<DeckId, boolean>,
+    linkAutoconnect: false,
+  });
+
+  setQuantizeAction(action: 'gestures' | 'transport' | 'fx' | 'cuts', on: boolean): void {
+    this.config.quantizeActions[action] = on;
+    this.engine.setQuantizeAction(action, on);
+  }
+
+  setSyncMaxDev(maxDev: number): void {
+    this.config.syncMaxDev = maxDev;
+    this.engine.setSyncMaxDev(maxDev);
+  }
+
+  setKeylock(deck: DeckId, on: boolean): void {
+    this.config.keylock[deck] = on;
+    this.engine.setKeylock(deck, on);
+  }
+
+  setLinkAutoconnect(on: boolean): void {
+    this.config.linkAutoconnect = on;
+  }
+
   cutTo(deck: DeckId): void {
     this.crossfade = deck === 'A' ? 0 : 1;
     this.engine.cutTo(deck);

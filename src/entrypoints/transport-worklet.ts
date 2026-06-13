@@ -36,7 +36,8 @@ export type TransportMessage =
   | { type: 'schedule'; at: number; domain: ScheduleDomain; action: ScheduledAction }
   | { type: 'cancelScheduled'; kind?: ScheduledAction['type'] }
   | { type: 'loopSet'; startAbs: number; endAbs: number }
-  | { type: 'loopClear' };
+  | { type: 'loopClear' }
+  | { type: 'keylock'; on: boolean };
 
 /** Waveform peak bucket size in samples (≈10.7 ms at 48 kHz). */
 export const PEAK_BUCKET = 512;
@@ -107,6 +108,7 @@ export default defineUnlistedScript(() => {
           case 'cancelScheduled': this.dsp.cancelScheduled(msg.kind); break;
           case 'loopSet': this.dsp.setLoop(msg.startAbs, msg.endAbs); break;
           case 'loopClear': this.dsp.clearLoop(); break;
+          case 'keylock': this.dsp.setKeylock(msg.on); break;
         }
       } catch (e) {
         this.fail(e);
