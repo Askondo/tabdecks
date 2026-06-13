@@ -12,6 +12,9 @@ npm run build && npm run chrome
 Opens Chrome (dedicated profile) with the extension loaded and two test-tone pages
 (440 Hz / 660 Hz). Start the tone on each page.
 
+> Requires **Chrome for Testing** as CHROME_PATH (see dev.local.cfg.example) — branded
+> Chrome stable ignores `--load-extension` since v137; the launcher warns if misconfigured.
+
 ## 1. Capture
 
 - [ ] Click the TabDecks action on tone tab 1 → Capture to Deck A → mixer window opens, Deck A shows LIVE.

@@ -1,8 +1,11 @@
 # Machine-specific dev config — copy to tools/dev.local.cfg (gitignored) and adjust.
 # KEY=VALUE lines; # starts a comment.
 
-# Chrome executable
-CHROME_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
+# Chrome executable. MUST be Chrome for Testing or Chromium — branded Chrome
+# stable ignores --load-extension since v137. Install Chrome for Testing with:
+#   npx @puppeteer/browsers install chrome@stable --path D:\tmp\tabdecks-cft
+# (the installer prints the exact version-stamped path — use that)
+CHROME_PATH=D:\tmp\tabdecks-cft\chrome\win64-<version>\chrome-win64\chrome.exe
 
 # Dedicated dev profile (created if missing) — keeps the extension out of your main profile
 PROFILE_DIR=D:\tmp\tabdecks-chrome-profile

@@ -49,6 +49,25 @@ if (!existsSync(cfg.CHROME_PATH!)) {
   process.exit(1);
 }
 
+// Branded Chrome stable ignores --load-extension since v137 (mid-2025): the
+// browser opens but the extension silently never loads. Chrome for Testing
+// and Chromium still support it.
+const looksBranded =
+  /\\Google\\Chrome\\Application\\chrome\.exe$/i.test(cfg.CHROME_PATH!) &&
+  !/chrome-for-testing|chrome-win64|tabdecks-cft/i.test(cfg.CHROME_PATH!);
+if (looksBranded) {
+  console.warn(
+    [
+      '⚠ CHROME_PATH points at branded Chrome — since Chrome 137, --load-extension is IGNORED there.',
+      '  The extension will NOT load. Either:',
+      '   1. Install Chrome for Testing and set CHROME_PATH to it:',
+      '        npx @puppeteer/browsers install chrome@stable --path D:\\tmp\\tabdecks-cft',
+      '   2. Or load unpacked manually in your normal Chrome:',
+      '        chrome://extensions → Developer mode → Load unpacked → .output\\chrome-mv3',
+    ].join('\n'),
+  );
+}
+
 let toneCount = 0;
 const pages = (cfg.START_PAGES ?? '')
   .split(',')
