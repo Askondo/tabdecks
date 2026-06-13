@@ -1,5 +1,6 @@
 <script lang="ts">
   import BpmDisplay from './BpmDisplay.svelte';
+  import SyncControls from './SyncControls.svelte';
   import EqSection from './EqSection.svelte';
   import Fader from './Fader.svelte';
   import FxSlot from './FxSlot.svelte';
@@ -27,6 +28,7 @@
       <h2>Deck {deck}</h2>
       <BpmDisplay {bridge} {deck} />
     </div>
+    <SyncControls {bridge} {deck} />
     <p class="status {state.status}" title={state.error ?? state.title}>
       {#if state.status === 'empty'}
         No tab assigned

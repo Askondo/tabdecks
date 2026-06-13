@@ -3,6 +3,7 @@ import { Crossfader } from './crossfader';
 import { Deck } from './deck';
 import { MasterBus } from './master';
 import { DeckTransport, TRANSPORT_WORKLET_URL } from './transport';
+import { SyncEngine, type SyncStatus } from './sync';
 import { getFxDescriptor } from './fx/registry';
 import type { BeatGridState } from './beatgrid';
 import type { EqBand } from './eq';
@@ -20,6 +21,8 @@ export interface EngineEvents {
   transportStatus: { deck: DeckId; status: TransportStatus };
   /** Deck beat grid changed (detection update, tap, override, nudge). */
   gridChanged: { deck: DeckId; grid: BeatGridState };
+  /** Sync engagement / master / phase-error changed. */
+  syncChanged: { status: SyncStatus };
 }
 
 type EventName = keyof EngineEvents;
@@ -36,6 +39,7 @@ export class AudioEngine {
   // Built in init() — the transport worklet module must load first.
   decks!: Record<DeckId, Deck>;
   crossfader!: Crossfader;
+  sync!: SyncEngine;
 
   private listeners = new Map<EventName, Set<Listener<EventName>>>();
 
@@ -63,8 +67,15 @@ export class AudioEngine {
           context: `transport(${deck.id}) latched to passthrough`,
           error: message,
         });
-      deck.transport.onStatus = (status) =>
+      deck.transport.onStatus = (status) => {
         this.emit('transportStatus', { deck: deck.id, status });
+        // One sync tick per status cadence; deck A's tick drives the loop so
+        // the PLL runs at a steady ~20 Hz regardless of which decks report.
+        if (deck.id === 'A') {
+          this.sync.update();
+          this.emit('syncChanged', { status: this.sync.status });
+        }
+      };
       deck.transport.grid.onChange = () =>
         this.emit('gridChanged', { deck: deck.id, grid: deck.transport.grid.state });
     }
@@ -73,6 +84,11 @@ export class AudioEngine {
       this.decks.A.xfade.gain,
       this.decks.B.xfade.gain,
     );
+    this.sync = new SyncEngine(this.ctx.sampleRate, {
+      A: this.decks.A.transport,
+      B: this.decks.B.transport,
+    });
+    this.sync.onChange = () => this.emit('syncChanged', { status: this.sync.status });
   }
 
   // ── Capture ────────────────────────────────────────────────────────────
@@ -253,6 +269,29 @@ export class AudioEngine {
 
   nudgeGrid(deck: DeckId, ms: number): void {
     this.guard('nudgeGrid', () => this.decks[deck].transport.grid.nudge(ms));
+  }
+
+  // ── Sync ───────────────────────────────────────────────────────────────
+
+  /** Engaging sync on a live deck enters timeshift so its rate can be warped
+   *  (the live edge can't be rate-shifted). */
+  setSync(deck: DeckId, on: boolean): void {
+    this.guard('setSync', () => {
+      if (on && this.decks[deck].transport.status?.mode === 'live') {
+        this.decks[deck].transport.pause();
+        this.decks[deck].transport.play();
+      }
+      this.sync.setEngaged(deck, on);
+    });
+  }
+
+  setSyncMaster(master: DeckId | 'link'): void {
+    this.guard('setSyncMaster', () => this.sync.setMaster(master));
+  }
+
+  /** One-shot phase alignment (no continuous lock). */
+  alignPhase(deck: DeckId): void {
+    this.guard('alignPhase', () => this.sync.alignPhase(deck));
   }
 
   setCrossfade(x: number): void {

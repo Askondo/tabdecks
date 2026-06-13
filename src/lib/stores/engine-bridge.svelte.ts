@@ -114,6 +114,13 @@ export class EngineBridge {
     engine.on('gridChanged', ({ deck, grid }) => {
       this.grids[deck] = grid;
     });
+    engine.on('syncChanged', ({ status }) => {
+      this.sync = {
+        engaged: { ...status.engaged },
+        master: status.master,
+        error: { ...status.error },
+      };
+    });
     engine.on('transportStatus', ({ deck, status }) => {
       const t = this.transport[deck];
       t.mode = status.mode;
@@ -221,6 +228,30 @@ export class EngineBridge {
 
   peakBetween(deck: DeckId, fromAbs: number, toAbs: number): number {
     return this.engine.peakBetween(deck, fromAbs, toAbs);
+  }
+
+  sync = $state<{
+    engaged: Record<DeckId, boolean>;
+    master: DeckId | 'link';
+    error: Record<DeckId, number>;
+  }>({
+    engaged: { A: false, B: false },
+    master: 'A',
+    error: { A: NaN, B: NaN },
+  });
+
+  setSync(deck: DeckId, on: boolean): void {
+    this.sync.engaged[deck] = on;
+    this.engine.setSync(deck, on);
+  }
+
+  setSyncMaster(master: DeckId | 'link'): void {
+    this.sync.master = master;
+    this.engine.setSyncMaster(master);
+  }
+
+  alignPhase(deck: DeckId): void {
+    this.engine.alignPhase(deck);
   }
 
   quantize = $state({ enabled: false, quantum: 1 });
